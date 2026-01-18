@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
+          xmlns:jcr="http://www.jcp.org/jcr/1.0"
+          jcr:primaryType="sling:OsgiConfig"
+          name="TranslateGemma Translation Service"
+          description="Google TranslateGemma translation service for AEM"
+          service.vendor="Example"
+          service.ranking="100">
+    
+    <projectId
+        jcr:primaryType="nt:unstructured"
+        type="String"
+        name="Google Cloud Project ID"
+        description="Enter your Google Cloud Project ID"/>
+    
+    <location
+        jcr:primaryType="nt:unstructured"
+        type="String"
+        default="us-central1"
+        name="Google Cloud Location"
+        description="Google Cloud location for Vertex AI"/>
+    
+    <enabled
+        jcr:primaryType="nt:unstructured"
+        type="Boolean"
+        default="true"
+        name="Service Enabled"
+        description="Enable the TranslateGemma service"/>
+    
+    <defaultSourceLanguage
+        jcr:primaryType="nt:unstructured"
+        type="String"
+        default="en"
+        name="Default Source Language"
+        description="Default source language code"/>
+    
+    <defaultTargetLanguage
+        jcr:primaryType="nt:unstructured"
+        type="String"
+        default="es"
+        name="Default Target Language"
+        description="Default target language code"/>
+    
+    <maxTranslationLength
+        jcr:primaryType="nt:unstructured"
+        type="Long"
+        default="5000"
+        name="Max Translation Length"
+        description="Maximum characters per translation request"/>
+</jcr:root>

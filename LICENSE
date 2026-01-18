@@ -1,0 +1,102 @@
+MIT License
+
+Copyright (c) 2024 AEM TranslateGemma Connector
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Additional Licenses and Acknowledgments
+
+This project uses the following third-party components:
+
+### Google Cloud Vertex AI
+- License: Apache License 2.0
+- Website: https://cloud.google.com/vertex-ai
+- Required for TranslateGemma model integration
+
+### AEM SDK API
+- License: Adobe Proprietary License
+- Website: https://experienceleague.adobe.com/docs/experience-manager.html
+- Required for AEM integration
+
+### OSGi Framework
+- License: Apache License 2.0
+- Website: https://www.osgi.org/
+- Required for component lifecycle management
+
+---
+
+## Usage Attribution
+
+When using this connector in production environments, please acknowledge the following:
+
+1. **TranslateGemma Model**: Powered by Google's TranslateGemma model through Google Cloud Vertex AI
+2. **AEM Integration**: Built for Adobe Experience Manager using official AEM SDKs
+3. **Open Source**: This connector is provided under MIT License for community use
+
+---
+
+## Commercial Usage
+
+This connector may be used for commercial purposes provided that:
+
+1. You maintain proper attribution for Google Cloud services
+2. You comply with Google Cloud's terms of service
+3. You comply with Adobe's AEM licensing requirements
+4. You acknowledge the MIT License for this connector
+
+---
+
+## Warranty Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Limitation of Liability
+
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE. THIS INCLUDES, BUT IS NOT LIMITED TO, DAMAGES ARISING
+FROM:
+
+- Loss of data
+- System downtime
+- Translation quality issues
+- Service interruptions
+- Third-party service failures
+
+---
+
+## Trademark Notice
+
+- "Adobe Experience Manager" and "AEM" are trademarks of Adobe Inc.
+- "Google Cloud", "Vertex AI", and "TranslateGemma" are trademarks of Google LLC
+- "Java" is a trademark of Oracle Corporation
+- "OSGi" is a trademark of the OSGi Alliance
+
+Use of these trademarks does not imply endorsement by the trademark owners.
