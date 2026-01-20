@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.example.aem</groupId>
     <artifactId>aem-translategemma-connector</artifactId>
     <version>1.0.0-SNAPSHOT</version>
-    <packaging>bundle</packaging>
+    <packaging>content-package</packaging>
 
     <name>AEM TranslateGemma Translation Connector</name>
     <description>Custom AEM translation connector using Google's TranslateGemma model</description>
@@ -17,11 +17,61 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
-        <aem.sdk.api.version>2023.10.12944.20231003T110627Z-231000</aem.sdk.api.version>
+        <aem.sdk.api.version>2024.9.17689.20240905T073330Z-240900</aem.sdk.api.version>
         <osgi.annotation.version>1.4.0</osgi.annotation.version>
         <junit.version>5.9.2</junit.version>
         <google.cloud.vertexai.version>0.4.0</google.cloud.vertexai.version>
+        <jackrabbit.version>1.3.6</jackrabbit.version>
     </properties>
+
+    <profiles>
+        <!-- Cloud Service Build Profile -->
+        <profile>
+            <id>cloud-service</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <build.environment>cloud</build.environment>
+            </properties>
+        </profile>
+
+        <!-- On-Premise/Local Development Profile -->
+        <profile>
+            <id>on-premise</id>
+            <properties>
+                <build.environment>on-premise</build.environment>
+            </properties>
+        </profile>
+    </profiles>
+
+    <repositories>
+        <repository>
+            <id>adobe-public-releases</id>
+            <name>Adobe Public Repository</name>
+            <url>https://repo.adobe.com/nexus/content/groups/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>adobe-public-releases</id>
+            <name>Adobe Public Repository</name>
+            <url>https://repo.adobe.com/nexus/content/groups/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
 
     <dependencies>
         <!-- AEM Core Dependencies -->
@@ -40,7 +90,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- OSGi Service Component Runtime -->
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.service.component</artifactId>
@@ -66,7 +115,7 @@
         <dependency>
             <groupId>com.google.cloud</groupId>
             <artifactId>google-cloud-vertexai</artifactId>
-            <version>0.4.0</version>
+            <version>${google.cloud.vertexai.version}</version>
         </dependency>
 
         <!-- Jackson for JSON processing -->
@@ -105,6 +154,13 @@
             <version>5.4.0</version>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.4.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -138,12 +194,77 @@
                 <configuration>
                     <instructions>
                         <Bundle-SymbolicName>com.example.aem.translation.translategemma</Bundle-SymbolicName>
-                        <Export-Package>com.example.aem.translation.*</Export-Package>
+                        <Bundle-Name>AEM TranslateGemma Translation Connector</Bundle-Name>
+                        <Bundle-Description>Translation connector using Google's TranslateGemma model</Bundle-Description>
+                        <Bundle-Vendor>Example AEM Solutions</Bundle-Vendor>
+                        <Bundle-Version>${project.version}</Bundle-Version>
+                        <Export-Package>
+                            com.example.aem.translation.*;version=${project.version},
+                            com.adobe.granite.translation.api;version=1.0.0
+                        </Export-Package>
                         <Import-Package>
-                            *;resolution:=optional
+                            com.adobe.granite.translation.api;version="[1.0,2)",
+                            com.adobe.granite.comments.*;version="[1.0,2)",
+                            com.day.cq.wcm.api.*;version="[1.0,2)",
+                            com.day.cq.dam.api.*;version="[1.0,2)",
+                            com.day.cq.tagging.*;version="[1.0,2)",
+                            org.apache.sling.api.resource.*;version="[1.0,2)",
+                            org.apache.sling.api.*;version="[1.0,2)",
+                            org.osgi.service.component.*;version="[1.4,2)",
+                            org.osgi.service.component.annotations.*;version="[1.4,2)",
+                            org.osgi.service.metatype.annotations.*;version="[1.4,2)",
+                            org.osgi.framework.*;version="[1.8,2)",
+                            org.osgi.annotation.versioning.*;version="[1.1,2)",
+                            com.google.cloud.vertexai.*;version="[0.4,1)",
+                            com.fasterxml.jackson.databind.*;version="[2.15,3)",
+                            javax.jcr.*;version="[2.0,3)",
+                            org.slf4j.*;version="[1.7,2)",
+                            *
                         </Import-Package>
                         <Sling-Model-Packages>com.example.aem.translation</Sling-Model-Packages>
+                        <Private-Package>
+                            com.example.aem.translation.impl.*,
+                            com.example.aem.translation.sites.service.*,
+                            com.example.aem.translation.sites.service.result.*
+                        </Private-Package>
+                        <Embed-Dependency>
+                            google-cloud-vertexai;inline=true,
+                            jackson-databind;inline=true
+                        </Embed-Dependency>
+                        <_dsannotations>*</_dsannotations>
+                        <_metatypeannotations>*</_metatypeannotations>
                     </instructions>
+                </configuration>
+            </plugin>
+
+            <!-- AEM Content Package Plugin for Cloud Service -->
+            <plugin>
+                <groupId>org.apache.jackrabbit</groupId>
+                <artifactId>filevault-package-maven-plugin</artifactId>
+                <version>${jackrabbit.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <group>Example AEM</group>
+                    <name>AEM TranslateGemma Connector</name>
+                    <description>Translation connector using Google TranslateGemma model</description>
+                    <packageType>application</packageType>
+                    <accessControlHandling>merge</accessControlHandling>
+                    <dependencies>
+                        <dependency>
+                            <group>com.day.cq</group>
+                            <name>cq-wcm-core</name>
+                            <version>[1.0,2)</version>
+                        </dependency>
+                    </dependencies>
+                    <filters>
+                        <filter>
+                            <root>/jcr_root</root>
+                            <includes>
+                                <include>/apps/**</include>
+                                <include>/conf/**</include>
+                            </includes>
+                        </filter>
+                    </filters>
                 </configuration>
             </plugin>
         </plugins>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspaceFilter version="1.0">
+    <filter root="/jcr_root">
+        <include pattern="/apps/.*"/>
+        <include pattern="/conf/.*"/>
+        <exclude pattern="/apps/.*(/.*)?(/.*)?"/>
+    </filter>
+    <filter root="/apps/example/translation/translategemma/config">
+        <include pattern="/apps/example/translation/translategemma/config(/.*)?"/>
+    </filter>
+</workspaceFilter>

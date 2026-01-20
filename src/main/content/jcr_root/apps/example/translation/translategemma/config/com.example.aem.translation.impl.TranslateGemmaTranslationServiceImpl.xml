@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
+          jcr:primaryType="nt:unstructured">
+    <jcr:content jcr:mixinTypes="[sling:OsgiConfig]">
+        <enableService jcr:primaryType="Boolean">true</enableService>
+        <projectId jcr:primaryType="String"/>
+        <location jcr:primaryType="String">us-central1</location>
+        <defaultSourceLanguage jcr:primaryType="String">en</defaultSourceLanguage>
+        <defaultTargetLanguage jcr:primaryType="String">es</defaultTargetLanguage>
+        <maxTranslationLength jcr:primaryType="Long">5000</maxTranslationLength>
+        <connectionTimeout jcr:primaryType="Integer">30</connectionTimeout>
+        <readTimeout jcr:primaryType="Integer">60</readTimeout>
+    </jcr:content>
+</jcr:root>

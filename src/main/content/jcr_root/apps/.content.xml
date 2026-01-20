@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:rep="internal"
+          jcr:primaryType="nt:unstructured">
+    <example jcr:primaryType="nt:unstructured">
+        <translation jcr:primaryType="nt:unstructured">
+            <translategemma jcr:primaryType="nt:unstructured"/>
+        </translation>
+    </example>
+</jcr:root>

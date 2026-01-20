@@ -5,6 +5,7 @@ import com.example.aem.translation.config.TranslateGemmaConfig;
 import com.adobe.granite.translation.api.*;
 import com.adobe.granite.translation.api.TranslationConstants.ContentType;
 import com.adobe.granite.translation.api.TranslationConstants.TranslationStatus;
+import com.adobe.granite.translation.api.TranslationConstants.TranslationMethod;
 import com.adobe.granite.comments.Comment;
 import com.adobe.granite.comments.CommentCollection;
 
@@ -31,7 +32,13 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Implementation of TranslateGemma Translation Service using Google Cloud Vertex AI.
  */
-@Component(service = TranslateGemmaTranslationService.class, immediate = true)
+@Component(
+    service = TranslateGemmaTranslationService.class,
+    immediate = true,
+    property = {
+        "service.ranking:Integer=100"
+    }
+)
 @Designate(ocd = TranslateGemmaConfig.class)
 public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTranslationService {
 
@@ -102,25 +109,30 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
     public TranslationServiceInfo getTranslationServiceInfo() {
         return new TranslationServiceInfo() {
             @Override
-            public String getName() {
+            public String getTranslationServiceName() {
                 return SERVICE_NAME;
             }
 
             @Override
-            public String getLabel() {
+            public String getTranslationServiceLabel() {
                 return SERVICE_LABEL;
             }
 
             @Override
-            public String getAttribution() {
+            public String getTranslationServiceAttribution() {
                 return ATTRIBUTION;
             }
-        };
-    }
 
-    @Override
-    public boolean isServiceAvailable() {
-        return vertexAI != null && model != null;
+            @Override
+            public TranslationConstants.TranslationMethod getSupportedTranslationMethod() {
+                return TranslationConstants.TranslationMethod.MACHINE_TRANSLATION;
+            }
+
+            @Override
+            public String getServiceCloudConfigRootPath() {
+                return "/conf/global/settings/cloudconfigs/translate-gemma";
+            }
+        };
     }
 
     @Override
@@ -128,10 +140,14 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         return new HashMap<>(supportedLanguages);
     }
 
+    public boolean isServiceAvailable() {
+        return vertexAI != null && model != null;
+    }
+
     @Override
     public boolean isDirectionSupported(String sourceLanguage, String targetLanguage) throws TranslationException {
         if (!isServiceAvailable()) {
-            throw new TranslationException("TranslateGemma service is not available");
+            throw new TranslationException("TranslateGemma service is not available", TranslationException.ErrorCode.NO_ENGINE);
         }
         
         // TranslateGemma supports most major language pairs
@@ -144,42 +160,44 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
     @Override
     public String detectLanguage(String detectSource, ContentType contentType) throws TranslationException {
         if (!isServiceAvailable()) {
-            throw new TranslationException("TranslateGemma service is not available");
+            throw new TranslationException("TranslateGemma service is not available", TranslationException.ErrorCode.SERVICE_NOT_IMPLEMENTED);
         }
 
         try {
-            // Use the model to detect language
+            // Use this model to detect language
             String prompt = String.format("Detect the language of this text and respond with only the ISO 639-1 language code: %s", detectSource);
-            
+
             GenerateContentResponse response = model.generateContent(prompt);
             String detectedLang = ResponseHandler.getText(response).trim().toLowerCase();
-            
+
             return detectedLang.length() == 2 ? detectedLang : "UNKNOWN";
         } catch (Exception e) {
             LOG.error("Error detecting language", e);
-            throw new TranslationException("Failed to detect language: " + e.getMessage());
+            throw new TranslationException("Failed to detect language: " + e.getMessage(), TranslationException.ErrorCode.UNKNOWN_LANGUAGE);
         }
     }
 
     @Override
-    public TranslationResult translateString(String sourceString, String sourceLanguage, 
-                                           String targetLanguage, ContentType contentType, 
+    public TranslationResult translateString(String sourceString, String sourceLanguage,
+                                           String targetLanguage, ContentType contentType,
                                            String contentCategory) throws TranslationException {
         if (!isServiceAvailable()) {
-            throw new TranslationException("TranslateGemma service is not available");
+            throw new TranslationException("TranslateGemma service is not available", TranslationException.ErrorCode.SERVICE_NOT_IMPLEMENTED);
         }
 
         try {
             // Auto-detect source language if not provided
-            String detectedSourceLang = sourceLanguage;
+            final String detectedSourceLang;
             if (sourceLanguage == null || sourceLanguage.trim().isEmpty()) {
                 detectedSourceLang = detectLanguage(sourceString, contentType);
+            } else {
+                detectedSourceLang = sourceLanguage;
             }
 
             // Validate language pair
             if (!isDirectionSupported(detectedSourceLang, targetLanguage)) {
-                throw new TranslationException("Translation direction not supported: " + 
-                    detectedSourceLang + " -> " + targetLanguage);
+                throw new TranslationException("Translation direction not supported: " +
+                    detectedSourceLang + " -> " + targetLanguage, TranslationException.ErrorCode.NOT_SUPPORTED_LANG_DIRECTION);
             }
 
             // Create translation prompt
@@ -201,28 +219,38 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 }
 
                 @Override
-                public String getOriginalText() {
+                public String getSourceString() {
                     return sourceString;
                 }
 
                 @Override
-                public String getTranslatedText() {
+                public String getTranslation() {
                     return translatedText;
                 }
 
                 @Override
-                public int getConfidenceRating() {
+                public ContentType getContentType() {
+                    return contentType;
+                }
+
+                @Override
+                public String getCategory() {
+                    return contentCategory != null ? contentCategory : "general";
+                }
+
+                @Override
+                public int getRating() {
                     return 0; // Default rating for machine translation
                 }
 
                 @Override
-                public String getSource() {
-                    return SERVICE_NAME;
+                public String getUserId() {
+                    return null;
                 }
             };
         } catch (Exception e) {
             LOG.error("Error translating string", e);
-            throw new TranslationException("Translation failed: " + e.getMessage());
+            throw new TranslationException("Translation failed: " + e.getMessage(), TranslationException.ErrorCode.TRANSLATION_FAILED);
         }
     }
 
@@ -282,15 +310,15 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
 
     @Override
     public TranslationStatus getTranslationJobStatus(String strTranslationJobID) throws TranslationException {
-        // For synchronous TranslateGemma, we return completed status
-        return TranslationStatus.COMPLETED;
+        // For synchronous TranslateGemma, we return complete status
+        return TranslationStatus.COMPLETE;
     }
 
     @Override
-    public TranslationStatus updateTranslationJobState(String strTranslationJobID, TranslationState state) 
+    public TranslationStatus updateTranslationJobState(String strTranslationJobID, TranslationState state)
             throws TranslationException {
         LOG.info("Updated job {} state to: {}", strTranslationJobID, state);
-        return TranslationStatus.COMPLETED;
+        return TranslationStatus.COMPLETE;
     }
 
     @Override
@@ -307,9 +335,9 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 "general"
             );
             
-            return new ByteArrayInputStream(result.getTranslatedText().getBytes());
+            return new ByteArrayInputStream(result.getTranslation().getBytes());
         } catch (Exception e) {
-            throw new TranslationException("Failed to get translated object: " + e.getMessage());
+            throw new TranslationException("Failed to get translated object: " + e.getMessage(), TranslationException.ErrorCode.TRANSLATION_FAILED);
         }
     }
 
@@ -317,5 +345,107 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         // Extract content from TranslationObject - this is a simplified implementation
         // In reality, you'd need to properly extract the content based on the object type
         return "Sample content for translation";
+    }
+
+    @Override
+    public void updateDueDate(String strTranslationJobID, java.util.Date date) throws TranslationException {
+        LOG.debug("Updating due date for job {} to {}", strTranslationJobID, date);
+    }
+
+    @Override
+    public void updateTranslationJobMetadata(String strTranslationJobID, TranslationMetadata jobMetadata,
+            TranslationConstants.TranslationMethod translationMethod) throws TranslationException {
+        LOG.debug("Updating metadata for job {}", strTranslationJobID);
+    }
+
+    @Override
+    public TranslationConstants.TranslationStatus updateTranslationObjectState(String strTranslationJobID,
+            TranslationObject translationObject, TranslationState state) throws TranslationException {
+        return TranslationConstants.TranslationStatus.DRAFT;
+    }
+
+    @Override
+    public TranslationConstants.TranslationStatus[] updateTranslationObjectsState(String strTranslationJobID,
+            TranslationObject[] translationObjects, TranslationState[] states) throws TranslationException {
+        TranslationConstants.TranslationStatus[] result = new TranslationConstants.TranslationStatus[translationObjects.length];
+        for (int i = 0; i < result.length; i++) {
+            result[i] = TranslationConstants.TranslationStatus.DRAFT;
+        }
+        return result;
+    }
+
+    @Override
+    public TranslationConstants.TranslationStatus getTranslationObjectStatus(String strTranslationJobID,
+            TranslationObject translationObject) throws TranslationException {
+        return TranslationConstants.TranslationStatus.DRAFT;
+    }
+
+    @Override
+    public TranslationConstants.TranslationStatus[] getTranslationObjectsStatus(String strTranslationJobID,
+            TranslationObject[] translationObjects) throws TranslationException {
+        TranslationConstants.TranslationStatus[] result = new TranslationConstants.TranslationStatus[translationObjects.length];
+        for (int i = 0; i < result.length; i++) {
+            result[i] = TranslationConstants.TranslationStatus.DRAFT;
+        }
+        return result;
+    }
+
+    @Override
+    public TranslationScope getFinalScope(String strTranslationJobID) throws TranslationException {
+        return null;
+    }
+
+    @Override
+    public void addTranslationJobComment(String strTranslationJobID, Comment comment) throws TranslationException {
+        LOG.debug("Adding comment to job {}", strTranslationJobID);
+    }
+
+    @Override
+    public void addTranslationObjectComment(String strTranslationJobID, TranslationObject translationObject,
+            Comment comment) throws TranslationException {
+        LOG.debug("Adding comment to object in job {}", strTranslationJobID);
+    }
+
+    @Override
+    public CommentCollection<Comment> getTranslationJobCommentCollection(String strTranslationJobID)
+            throws TranslationException {
+        return null;
+    }
+
+    @Override
+    public CommentCollection<Comment> getTranslationObjectCommentCollection(String strTranslationJobID,
+            TranslationObject translationObject) throws TranslationException {
+        return null;
+    }
+
+    @Override
+    public String getDefaultCategory() {
+        return "general";
+    }
+
+    @Override
+    public void setDefaultCategory(String defaultCategory) {
+        LOG.debug("Setting default category to {}", defaultCategory);
+    }
+
+    @Override
+    public TranslationResult[] getAllStoredTranslations(String sourceString, String sourceLanguage,
+            String targetLanguage, TranslationConstants.ContentType contentType, String contentCategory,
+            String userId, int maxTranslations) throws TranslationException {
+        return new TranslationResult[0];
+    }
+
+    @Override
+    public void storeTranslation(String[] originalText, String sourceLanguage, String targetLanguage,
+            String[] updatedTranslation, TranslationConstants.ContentType contentType, String contentCategory,
+            String userId, int rating, String path) throws TranslationException {
+        LOG.debug("Storing multiple translations");
+    }
+
+    @Override
+    public void storeTranslation(String originalText, String sourceLanguage, String targetLanguage,
+            String updatedTranslation, TranslationConstants.ContentType contentType, String contentCategory,
+            String userId, int rating, String path) throws TranslationException {
+        LOG.debug("Storing translation: {} -> {}", sourceLanguage, targetLanguage);
     }
 }
