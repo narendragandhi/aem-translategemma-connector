@@ -74,6 +74,12 @@ public class AEMSitesTranslationServiceImpl implements AEMSitesTranslationServic
     @Reference
     private ContentFragmentTranslationService contentFragmentTranslationService;
 
+    @Reference
+    private com.example.aem.translation.service.MSMDeltaService msmDeltaService;
+
+    @Reference
+    private com.example.aem.translation.service.DitaTagProtectionService ditaTagProtectionService;
+
     @Override
     public PageTranslationResult translatePage(Page page, String targetLanguage, String category) 
             throws TranslationException {
@@ -81,6 +87,13 @@ public class AEMSitesTranslationServiceImpl implements AEMSitesTranslationServic
         long startTime = System.currentTimeMillis();
         String sourceLanguage = page.getLanguage(false).getLanguage();
         
+        // Prime Time: MSM Delta Check
+        Resource contentResource = page.getContentResource();
+        if (contentResource != null && !msmDeltaService.isTranslationRequired(contentResource, targetLanguage)) {
+            LOG.info("Skipping translation for page: {} - Already up to date via MSM Delta Check", page.getPath());
+            return new PageTranslationResult(page.getPath(), sourceLanguage, targetLanguage, new HashMap<>(), new HashMap<>(), new ArrayList<>(), 0);
+        }
+
         LOG.info("Starting translation for page: {} from {} to {}", 
                 page.getPath(), sourceLanguage, targetLanguage);
 
@@ -94,7 +107,6 @@ public class AEMSitesTranslationServiceImpl implements AEMSitesTranslationServic
             translatePageProperties(page, sourceLanguage, targetLanguage, category, translatedProperties);
 
             // Translate page components
-            Resource contentResource = page.getContentResource();
             if (contentResource != null) {
                 componentResults = translateComponents(contentResource, sourceLanguage, targetLanguage, category);
             }
@@ -104,6 +116,9 @@ public class AEMSitesTranslationServiceImpl implements AEMSitesTranslationServic
 
             // Apply translations to page
             applyPageTranslations(page, translatedProperties, componentResults, translatedTags);
+
+            // Prime Time: Mark as translated
+            msmDeltaService.markAsTranslated(page.getContentResource(), targetLanguage);
 
             long translationTime = System.currentTimeMillis() - startTime;
             
@@ -376,10 +391,25 @@ public class AEMSitesTranslationServiceImpl implements AEMSitesTranslationServic
             if (value != null && !value.trim().isEmpty()) {
                 try {
                     TranslationConstants.ContentType contentType = determineContentType(propertyName, componentType);
+                    String textToTranslate = value;
+                    com.example.aem.translation.service.DitaTagProtectionService.ProtectedContent protectedContent = null;
+                    
+                    // Prime Time: Protection for Structured Content
+                    if (contentType == TranslationConstants.ContentType.HTML || textToTranslate.contains("<")) {
+                        protectedContent = ditaTagProtectionService.protect(textToTranslate);
+                        textToTranslate = protectedContent.getMaskedContent();
+                    }
+
                     TranslationResult result = translationService.translateString(
-                        value, sourceLanguage, targetLanguage, contentType, category
+                        textToTranslate, sourceLanguage, targetLanguage, contentType, category
                     );
-                    translatedProperties.put(propertyName, result.getTranslation());
+                    
+                    String translatedText = result.getTranslation();
+                    if (protectedContent != null) {
+                        translatedText = ditaTagProtectionService.restore(translatedText, protectedContent.getPlaceholders());
+                    }
+
+                    translatedProperties.put(propertyName, translatedText);
                 } catch (Exception e) {
                     LOG.warn("Failed to translate property {} of component {}", 
                              propertyName, componentResource.getPath(), e);
