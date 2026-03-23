@@ -80,6 +80,12 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
     @Reference
     private TerminologyService terminologyService;
 
+    @Reference
+    private com.example.aem.translation.service.TranslationAuditService auditService;
+
+    @Reference
+    private com.example.aem.translation.service.TranslationFeedbackService feedbackService;
+
 
     private static class TranslationJob {
         private final String jobId;
@@ -276,24 +282,13 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         }
 
         String sanitizedInput = InputSanitizer.sanitizeForPrompt(content);
-        String cacheKey = "sentiment:" + sanitizedInput;
-
-        if (cachingEnabled && cache != null) {
-            String cachedJson = cache.getTranslation(sanitizedInput, "sentiment", "json", key -> null);
-            if (cachedJson != null) {
-                try {
-                    return objectMapper.readValue(cachedJson, SentimentResult.class);
-                } catch (IOException e) {
-                    LOG.warn("Failed to parse cached sentiment JSON", e);
-                }
-            }
-        }
-
+        
         try {
             String jsonResponse = resilienceHelper.executeWithRetryAndCircuitBreaker(
                 () -> {
                     String prompt = String.format(
-                        "Analyze the sentiment of the following text. Provide a score between -1.0 and 1.0 (where -1.0 is strongly negative and 1.0 is strongly positive), a one-word label (POSITIVE, NEGATIVE, NEUTRAL), and a brief one-sentence explanation. Respond ONLY in JSON format: {\"score\": 0.0, \"label\": \"NEUTRAL\", \"explanation\": \"...\"}\n\nText: %s",
+                        "Analyze the sentiment of the following text. " +
+                        "Respond ONLY in JSON format: {\"sentiment\": \"POSITIVE|NEGATIVE|NEUTRAL\", \"confidence\": 0.95, \"reasoning\": \"The explanation...\"}\n\nText: %s",
                         sanitizedInput
                     );
                     return executeGemmaPrompt(prompt);
@@ -312,10 +307,8 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
 
             SentimentResult result = objectMapper.readValue(processedJsonResponse, SentimentResult.class);
             
-            if (cachingEnabled && cache != null) {
-                final String finalJsonResponse = processedJsonResponse;
-                cache.getTranslation(sanitizedInput, "sentiment", "json", key -> finalJsonResponse);
-            }
+            // Log for audit
+            auditService.logEvent("N/A", "en", "en", result, null, "system");
 
             return result;
         } catch (Exception e) {
@@ -335,55 +328,36 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         }
 
         try {
-            // 1. Scan for prohibited terms using TerminologyService
-            List<TerminologyMatch> matches = terminologyService.findAllTerms(content, "en", "en", "brand", 100);
+            String sanitizedInput = InputSanitizer.sanitizeForPrompt(content);
+            String jsonResponse = resilienceHelper.executeWithRetryAndCircuitBreaker(
+                () -> {
+                    String prompt = String.format(
+                        "Analyze the following text for brand compliance and prohibited content. " +
+                        "Respond ONLY in JSON format: {\"compliant\": true|false, \"feedback\": \"Summary...\", \"confidence\": 0.98, \"reasoning\": \"Why...\"}\n\nText: %s",
+                        sanitizedInput
+                    );
+                    return executeGemmaPrompt(prompt);
+                },
+                "analyzeCompliance",
+                "translationCircuitBreaker"
+            );
+
+            // Strip markdown code blocks if present in LLM response
+            String processedJsonResponse = jsonResponse;
+            if (processedJsonResponse.startsWith("```json")) {
+                processedJsonResponse = processedJsonResponse.substring(7, processedJsonResponse.length() - 3).trim();
+            } else if (processedJsonResponse.startsWith("```")) {
+                processedJsonResponse = processedJsonResponse.substring(3, processedJsonResponse.length() - 3).trim();
+            }
+
+            ComplianceResult result = objectMapper.readValue(processedJsonResponse, ComplianceResult.class);
             
-            if (matches.isEmpty()) {
-                return new ComplianceResult(content, Collections.emptyList());
-            }
+            // Log for audit
+            auditService.logEvent("N/A", "en", "en", null, result, "system");
 
-            List<ComplianceResult.ComplianceViolation> violations = new ArrayList<>();
-
-            // 2. For each match, use Gemma to get a contextual suggestion
-            for (TerminologyMatch match : matches) {
-                String prompt = String.format(
-                    "The text contains the following prohibited term: '%s'. " +
-                    "Based on the surrounding context: '%s', suggest a more brand-aligned alternative. " +
-                    "Respond ONLY in JSON format: {\"suggestion\": \"...\", \"reason\": \"...\", \"severity\": \"HIGH\"}",
-                    match.getSourceTerm(), content
-                );
-
-                String jsonResponse = resilienceHelper.executeWithRetryAndCircuitBreaker(
-                    () -> executeGemmaPrompt(prompt),
-                    "analyzeCompliance",
-                    "translationCircuitBreaker"
-                );
-
-                // Clean JSON
-                if (jsonResponse.startsWith("```json")) {
-                    jsonResponse = jsonResponse.substring(7, jsonResponse.length() - 3).trim();
-                } else if (jsonResponse.startsWith("```")) {
-                    jsonResponse = jsonResponse.substring(3, jsonResponse.length() - 3).trim();
-                }
-
-                // Parse suggestion
-                Map<String, Object> suggestionMap = objectMapper.readValue(jsonResponse, Map.class);
-                String suggestion = (String) suggestionMap.getOrDefault("suggestion", match.getTargetTerm());
-                String reason = (String) suggestionMap.getOrDefault("reason", "Prohibited terminology detected.");
-                String severityStr = (String) suggestionMap.getOrDefault("severity", "MEDIUM");
-                
-                ComplianceResult.ComplianceViolation.Severity severity = 
-                        ComplianceResult.ComplianceViolation.Severity.valueOf(severityStr.toUpperCase());
-
-                violations.add(new ComplianceResult.ComplianceViolation(
-                    match.getSourceTerm(), suggestion, reason, severity
-                ));
-            }
-
-            return new ComplianceResult(content, violations);
-
+            return result;
         } catch (Exception e) {
-            LOG.error("Error analyzing brand compliance", e);
+            LOG.error("Error analyzing compliance", e);
             throw TranslateGemmaException.translationFailed(e.getMessage());
         }
     }
@@ -633,6 +607,17 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 metrics.recordLatency(System.currentTimeMillis() - startTime);
             }
 
+            // Trust & Transparency: Analyze the result
+            SentimentResult sentiment = null;
+            ComplianceResult compliance = null;
+            try {
+                sentiment = analyzeSentiment(translatedText);
+                compliance = analyzeCompliance(translatedText);
+                auditService.logEvent("N/A", finalSourceLang, sanitizedTargetLang, sentiment, compliance, "system");
+            } catch (Exception ex) {
+                LOG.warn("Failed to perform transparency analysis for translation", ex);
+            }
+
             return createTranslationResult(translatedText, finalSourceLang, sanitizedTargetLang, 
                     sanitizedText, contentType, sanitizedCategory);
 
@@ -712,12 +697,25 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         String sourceLangName = supportedLanguages.getOrDefault(sourceLang.toLowerCase(), sourceLang);
         String targetLangName = supportedLanguages.getOrDefault(targetLang.toLowerCase(), targetLang);
 
-        return String.format(
-            "Translate the following %s from %s to %s. " +
-            "Preserve the original formatting and structure. " +
-            "Respond with only the translated text, no explanations.\n\n%s",
-            contentTypeDesc, sourceLangName, targetLangName, text
-        );
+        StringBuilder prompt = new StringBuilder();
+        prompt.append(String.format("Translate the following %s from %s to %s. ", contentTypeDesc, sourceLangName, targetLangName));
+        prompt.append("Preserve the original formatting and structure. Respond with only the translated text.\n\n");
+
+        // Few-Shot Learning: Add human feedback examples
+        List<com.example.aem.translation.model.TranslationFeedback> feedback = 
+            feedbackService.getRelevantFeedback(text, sourceLang, targetLang, 3);
+        
+        if (!feedback.isEmpty()) {
+            prompt.append("### Guidelines based on previous human corrections:\n");
+            for (com.example.aem.translation.model.TranslationFeedback fb : feedback) {
+                prompt.append(String.format("Source: \"%s\"\nCorrection: \"%s\"\n\n", 
+                    fb.getSourceString(), fb.getHumanCorrection()));
+            }
+            prompt.append("### Now translate:\n");
+        }
+
+        prompt.append(text);
+        return prompt.toString();
     }
 
     // Asynchronous translation methods implementation

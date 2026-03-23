@@ -2,49 +2,27 @@ package com.example.aem.translation.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.util.List;
 
 public class ComplianceResult {
-    private final String content;
-    private final List<ComplianceViolation> violations;
-    private final boolean isCompliant;
+    private final boolean compliant;
+    private final String feedback;
+    private final double confidence;
+    private final String reasoning;
 
     @JsonCreator
     public ComplianceResult(
-            @JsonProperty("content") String content,
-            @JsonProperty("violations") List<ComplianceViolation> violations) {
-        this.content = content;
-        this.violations = violations;
-        this.isCompliant = violations == null || violations.isEmpty();
+            @JsonProperty("compliant") boolean compliant,
+            @JsonProperty("feedback") String feedback,
+            @JsonProperty("confidence") double confidence,
+            @JsonProperty("reasoning") String reasoning) {
+        this.compliant = compliant;
+        this.feedback = feedback;
+        this.confidence = confidence;
+        this.reasoning = reasoning;
     }
 
-    public String getContent() { return content; }
-    public List<ComplianceViolation> getViolations() { return violations; }
-    public boolean isCompliant() { return isCompliant; }
-
-    public static class ComplianceViolation {
-        private final String flaggedTerm;
-        private final String suggestion;
-        private final String reason;
-        private final Severity severity;
-
-        public enum Severity { LOW, MEDIUM, HIGH }
-
-        @JsonCreator
-        public ComplianceViolation(
-                @JsonProperty("flaggedTerm") String flaggedTerm,
-                @JsonProperty("suggestion") String suggestion,
-                @JsonProperty("reason") String reason,
-                @JsonProperty("severity") Severity severity) {
-            this.flaggedTerm = flaggedTerm;
-            this.suggestion = suggestion;
-            this.reason = reason;
-            this.severity = severity;
-        }
-
-        public String getFlaggedTerm() { return flaggedTerm; }
-        public String getSuggestion() { return suggestion; }
-        public String getReason() { return reason; }
-        public Severity getSeverity() { return severity; }
-    }
+    public boolean isCompliant() { return compliant; }
+    public String getFeedback() { return feedback; }
+    public double getConfidence() { return confidence; }
+    public String getReasoning() { return reasoning; }
 }

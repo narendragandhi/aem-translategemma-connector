@@ -4,30 +4,21 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class SentimentResult {
-    private final String content;
-    private final double score;
-    private final String label;
-    private final String explanation;
+    private final String sentiment; // POSITIVE, NEGATIVE, NEUTRAL
+    private final double confidence;
+    private final String reasoning;
 
     @JsonCreator
     public SentimentResult(
-            @JsonProperty("content") String content,
-            @JsonProperty("score") double score,
-            @JsonProperty("label") String label,
-            @JsonProperty("explanation") String explanation) {
-        this.content = content;
-        this.score = score;
-        this.label = label;
-        this.explanation = explanation;
+            @JsonProperty("sentiment") String sentiment,
+            @JsonProperty("confidence") double confidence,
+            @JsonProperty("reasoning") String reasoning) {
+        this.sentiment = sentiment;
+        this.confidence = confidence;
+        this.reasoning = reasoning;
     }
 
-    public String getContent() { return content; }
-    public double getScore() { return score; }
-    public String getLabel() { return label; }
-    public String getExplanation() { return explanation; }
-
-    @Override
-    public String toString() {
-        return String.format("Sentiment: %s (%.2f) - %s", label, score, explanation);
-    }
+    public String getSentiment() { return sentiment; }
+    public double getConfidence() { return confidence; }
+    public String getReasoning() { return reasoning; }
 }

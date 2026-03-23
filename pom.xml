@@ -269,6 +269,7 @@
                             com.example.aem.translation.*;version=${project.version},
                             com.example.aem.translation.provider;version=${project.version},
                             com.example.aem.translation.service;version=${project.version},
+                            com.example.aem.translation.model;version=${project.version},
                             com.adobe.granite.translation.api;version=1.0.0
                         </Export-Package>
                         <Import-Package>
@@ -279,6 +280,7 @@
                             com.day.cq.tagging.*;version="[1.0,2)",
                             com.day.cq.xfw.*;version="[1.0,2)",
                             org.apache.sling.api.resource.*;version="[1.0,2)",
+                            org.apache.sling.api.servlets.*;version="[2.1,3)",
                             org.apache.sling.api.*;version="[1.0,2)",
                             org.apache.sling.jcr.resource.*;version="[1.0,2)",
                             org.apache.sling.resourcebuilder.*;version="[1.0,2)",
@@ -302,6 +304,7 @@
                         <Sling-Model-Packages>com.example.aem.translation</Sling-Model-Packages>
                         <Private-Package>
                             com.example.aem.translation.impl.*,
+                            com.example.aem.translation.servlet.*,
                             com.example.aem.translation.sites.service.*,
                             com.example.aem.translation.sites.service.result.*,
                             com.example.aem.translation.tm.impl.*,
