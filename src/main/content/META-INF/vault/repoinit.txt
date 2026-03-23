@@ -1,0 +1,29 @@
+#
+# RepoInit script for AEM TranslateGemma Connector
+# Add this to your AEM project's repository structure initialization
+#
+
+# Create service user for TranslateGemma connector
+create service user translate-gemma-service with path /home/system/translategemma
+
+# Grant access to translation memory storage
+set ACL for translate-gemma-service
+    allow jcr:read, jcr:write, jcr:modifyProperties, jcr:remove on /var/translation-memory
+end
+
+# Grant read access to content that may need translation
+set ACL for translate-gemma-service
+    allow jcr:read on /content
+    allow jcr:read on /content/dam
+    allow jcr:read on /content/fragments
+end
+
+# Grant access for terminology storage
+set ACL for translate-gemma-service
+    allow jcr:read, jcr:write, jcr:modifyProperties on /var/terminology
+end
+
+# Create translation memory root node if it doesn't exist
+create path /var/translation-memory
+create path /var/terminology
+create path /var/translation-jobs

@@ -1,0 +1,17 @@
+application:
+  actions: actions
+  web: web-src
+  runtimeManifest:
+    packages:
+      aem-gemma:
+        license: Apache-2.0
+        actions:
+          on-content-modified:
+            function: actions/on-content-modified/index.js
+            web: 'no'
+            runtime: 'nodejs:18'
+            inputs:
+              aem_host: "$AEM_HOST"
+              aem_token: "$AEM_TOKEN"
+            annotations:
+              require-adobe-auth: true

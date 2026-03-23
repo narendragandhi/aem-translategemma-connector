@@ -5,14 +5,67 @@ All notable changes to the AEM TranslateGemma Translation Connector will be docu
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-03-11
 
-### Planned
-- Enhanced caching mechanisms
-- Support for custom language models
-- Advanced error handling and retry logic
-- Performance metrics and monitoring
-- AEM UI configuration components
+### Added
+- **Fallback Translation Providers**
+  - DeepL Provider (`DeepLProvider`) - DeepL API integration with free/pro tier support
+  - OpenAI Provider (`OpenAIProvider`) - GPT-4o integration via OpenAI API  
+  - Ollama Provider (`OllamaProvider`) - Local LLM deployment support
+  - Provider Registry (`ProviderRegistry`) - Multi-provider management with automatic failover
+
+- **Integration Tests**
+  - Fallback provider selection tests
+  - Provider language pair support tests
+  - Provider health status tests
+  - Batch translation with failover tests
+  - Provider priority sorting tests
+
+- **Service User Configuration**
+  - RepoInit script for AEM service user setup
+  - ACL permissions for translation memory and terminology storage
+
+### Changed
+- Updated PROJECT_STATUS.md with new features
+- Updated API.md with provider interface documentation
+- Enhanced pom.xml for new provider packages
+
+### Fixed
+- Integration test compilation errors resolved
+
+---
+
+## [1.1.0] - 2026-03-09
+
+### Added
+- **Translation Memory Service**: JCR-based TM with fuzzy matching (Levenshtein + Jaccard)
+- **Multi-Provider Support**: Interface for 6 providers (TranslateGemma, Google Translate, DeepL, Microsoft, OpenAI, Ollama)
+- **Experience Fragment Translation**: New service for XF translation
+- **DAM Asset Metadata Translation**: Translate dc:title, dc:description, tags, etc.
+- **i18n Dictionary Translation**: AEM Forms dictionary support with placeholder preservation
+- **Visual Context Capture**: HTTP-based screenshot service for translator reference
+- **Job Management Dashboard**: REST API at /bin/translationgemma/dashboard
+- **Enhanced Configuration**: 20+ OSGi properties for provider selection, TM settings, etc.
+
+### Features
+- Automatic fallback between translation providers
+- Parallel translation requests (configurable)
+- Retry logic on failure
+- Content type filtering for DAM/i18n
+- Job statistics and filtering
+
+### Test Coverage
+- Added TranslationMemoryServiceTest with 12 test methods
+- Coverage for TM store/retrieve, fuzzy matching, statistics
+
+### Breaking Changes
+- `TranslationConstants.ContentType.PLAIN_TEXT` renamed to `PLAIN`
+- `TranslationConstants.TranslationStatus.PAUSED` not available
+
+### Files Changed
+- New Java files: 14
+- Modified: pom.xml, TranslateGemmaConfig.java, README.md
+- New test files: 1
 
 ## [1.0.0] - 2024-01-17
 
@@ -85,31 +138,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **JUnit 5**: Unit testing framework
 - **Mockito**: Test mocking framework
 
-## Project Structure
+## Project Structure (v1.1.0)
 
 ```
 aem-translategemma-connector/
 ├── src/main/java/com/example/aem/translation/
 │   ├── config/
-│   │   └── TranslateGemmaConfig.java         # OSGi configuration
+│   │   └── TranslateGemmaConfig.java           # OSGi configuration (enhanced)
 │   ├── service/
-│   │   └── TranslateGemmaTranslationService.java  # Service interface
-│   └── impl/
-│       ├── TranslateGemmaTranslationServiceImpl.java  # Main implementation
-│       └── TranslateGemmaBundleActivator.java     # Bundle lifecycle
-├── src/main/resources/META-INF/
-│   └── config/...                              # Cloud service configs
+│   │   └── TranslateGemmaTranslationService.java
+│   ├── impl/
+│   │   ├── TranslateGemmaTranslationServiceImpl.java
+│   │   └── TranslateGemmaBundleActivator.java
+│   ├── tm/                                      # NEW: Translation Memory
+│   │   ├── TranslationMemoryService.java
+│   │   └── impl/JcrTranslationMemoryServiceImpl.java
+│   ├── xf/                                      # NEW: Experience Fragments
+│   │   ├── ExperienceFragmentTranslationService.java
+│   │   └── impl/ExperienceFragmentTranslationServiceImpl.java
+│   ├── dam/                                     # NEW: DAM Metadata
+│   │   ├── DamMetadataTranslationService.java
+│   │   └── impl/DamMetadataTranslationServiceImpl.java
+│   ├── i18n/                                    # NEW: i18n Dictionaries
+│   │   ├── I18nDictionaryTranslationService.java
+│   │   └── impl/I18nDictionaryTranslationServiceImpl.java
+│   ├── visualcontext/                           # NEW: Visual Context
+│   │   ├── VisualContextService.java
+│   │   └── impl/VisualContextServiceImpl.java
+│   ├── job/                                     # NEW: Job Management
+│   │   ├── TranslationJobManager.java
+│   │   └── impl/TranslationJobManagerImpl.java
+│   ├── servlet/                                 # NEW: REST API
+│   │   └── TranslationDashboardServlet.java
+│   └── provider/                                # NEW: Multi-Provider
+│       └── TranslationProvider.java
 ├── src/test/java/com/example/aem/translation/
-│   └── TranslateGemmaTranslationServiceTest.java  # Unit tests
+│   ├── TranslateGemmaTranslationServiceImplTest.java
+│   ├── TranslateGemmaConnectorTest.java
+│   └── tm/                                      # NEW: TM Tests
+│       └── TranslationMemoryServiceTest.java
 ├── docs/
-│   ├── API.md                                   # API documentation
-│   ├── SECURITY.md                              # Security guide
-│   └── CONTRIBUTING.md                          # Development guidelines
-├── README.md                                     # Main documentation
-├── CHANGELOG.md                                 # This file
-├── build.sh                                     # Build script
-├── .gitignore                                   # Git ignore rules
-└── pom.xml                                      # Maven configuration
+│   ├── API.md
+│   ├── SECURITY.md
+│   └── CONTRIBUTING.md
+├── README.md
+├── CHANGELOG.md
+├── pom.xml
+└── build.sh
 ```
 
 ## Technical Specifications
@@ -139,19 +214,13 @@ aem-translategemma-connector/
 
 ### Future Roadmap
 
-#### v1.1.0 (Planned)
-- Enhanced caching with Redis support
-- Custom language model integration
-- Advanced retry logic with exponential backoff
-- Performance metrics collection
-- Batch translation optimization
-
 #### v1.2.0 (Planned)
 - AEM UI configuration components
-- Translation memory integration
 - Content preview in target languages
 - Translation quality scoring
 - Real-time translation progress tracking
+- Human translation bridge
+- LQA (Linguistic Quality Assurance) tools
 
 #### v2.0.0 (Future)
 - Multi-model support (Gemini, PaLM, etc.)
@@ -175,11 +244,15 @@ aem-translategemma-connector/
 - **Java Versions**: 11, 17
 - **Google Cloud API**: Vertex AI latest stable
 
-### Known Limitations
+### Known Limitations (v1.1.0)
 - Google Cloud rate limits apply
 - Dependent on TranslateGemma model availability
 - Content size restrictions per request
 - External service dependency
+- Translation Memory persistence is in-memory only (JCR write stubbed)
+- Visual context generates mock screenshots (requires AEM runtime for HTTP capture)
+- Human translation bridge not implemented
+- LQA tools not implemented
 
 ---
 

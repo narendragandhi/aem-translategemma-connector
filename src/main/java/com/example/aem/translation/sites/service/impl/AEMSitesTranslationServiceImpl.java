@@ -1,5 +1,8 @@
 package com.example.aem.translation.sites.service.impl;
 
+import com.adobe.cq.dam.cfm.ContentFragment;
+import com.example.aem.translation.cfintegration.service.ContentFragmentTranslationService;
+import com.example.aem.translation.cfintegration.service.result.ContentFragmentTranslationResult;
 import com.example.aem.translation.sites.service.AEMSitesTranslationService;
 import com.example.aem.translation.sites.service.result.*;
 import com.example.aem.translation.service.TranslateGemmaTranslationService;
@@ -68,6 +71,9 @@ public class AEMSitesTranslationServiceImpl implements AEMSitesTranslationServic
     @Reference
     private TranslateGemmaTranslationService translationService;
 
+    @Reference
+    private ContentFragmentTranslationService contentFragmentTranslationService;
+
     @Override
     public PageTranslationResult translatePage(Page page, String targetLanguage, String category) 
             throws TranslationException {
@@ -112,6 +118,12 @@ public class AEMSitesTranslationServiceImpl implements AEMSitesTranslationServic
             throw new TranslationException("Page translation failed: " + e.getMessage(),
                 TranslationException.ErrorCode.TRANSLATION_FAILED);
         }
+    }
+
+    @Override
+    public ContentFragmentTranslationResult translateContentFragment(
+            ContentFragment contentFragment, String targetLanguage, String category) throws TranslationException {
+        return contentFragmentTranslationService.translateContentFragment(contentFragment, targetLanguage, category);
     }
 
     @Override
@@ -239,8 +251,18 @@ public class AEMSitesTranslationServiceImpl implements AEMSitesTranslationServic
 
             TranslationState initialState = new TranslationState() {
                 @Override
+                public String getName() {
+                    return "Initial State";
+                }
+
+                @Override
                 public TranslationConstants.TranslationStatus getStatus() {
                     return TranslationConstants.TranslationStatus.DRAFT;
+                }
+
+                @Override
+                public String getDescription() {
+                    return jobDescription;
                 }
 
                 @Override

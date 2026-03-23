@@ -12,6 +12,11 @@ import com.adobe.granite.translation.api.TranslationException;
 import com.adobe.granite.translation.api.TranslationScope;
 import com.adobe.granite.comments.Comment;
 import com.adobe.granite.comments.CommentCollection;
+import com.example.aem.translation.model.SentimentResult;
+import com.example.aem.translation.model.ComplianceResult;
+import com.example.aem.translation.model.AssetAnalysisResult;
+import com.example.aem.translation.exception.TranslateGemmaException;
+import org.apache.sling.api.resource.ResourceResolver;
 
 import java.io.InputStream;
 import java.util.Date;
@@ -20,6 +25,31 @@ import java.util.Map;
 public interface TranslateGemmaTranslationService extends TranslationService {
 
     boolean isServiceAvailable();
+
+    /**
+     * Analyzes the sentiment of the provided content using the Gemma LLM.
+     * @param content The text content to analyze.
+     * @return A SentimentResult containing the score and label.
+     * @throws TranslateGemmaException if the analysis fails.
+     */
+    SentimentResult analyzeSentiment(String content) throws TranslateGemmaException;
+
+    /**
+     * Analyzes the content for brand compliance against defined terminology.
+     * @param content The text content to analyze.
+     * @return A ComplianceResult containing flagged terms and suggestions.
+     * @throws TranslateGemmaException if the analysis fails.
+     */
+    ComplianceResult analyzeCompliance(String content) throws TranslateGemmaException;
+
+    /**
+     * Analyzes a DAM asset to generate Alt-Text and SEO keywords.
+     * @param assetPath The repository path to the asset.
+     * @param resolver The resource resolver to access the asset.
+     * @return An AssetAnalysisResult.
+     * @throws TranslateGemmaException if the analysis fails.
+     */
+    AssetAnalysisResult analyzeAsset(String assetPath, ResourceResolver resolver) throws TranslateGemmaException;
 
     @Override
     boolean isDirectionSupported(String sourceLanguage, String targetLanguage) throws TranslationException;
@@ -117,7 +147,7 @@ public interface TranslateGemmaTranslationService extends TranslationService {
 
     @Override
     void storeTranslation(String[] originalText, String sourceLanguage, String targetLanguage,
-            String[] updatedTranslation, ContentType contentType, String contentCategory,
+            @SuppressWarnings("deprecation") String[] updatedTranslation, ContentType contentType, String contentCategory,
             String userId, int rating, String path) throws TranslationException;
 
     @Override

@@ -1,0 +1,54 @@
+package com.example.aem.translation.dam;
+
+import com.adobe.granite.translation.api.TranslationConstants;
+import com.adobe.granite.translation.api.TranslationException;
+
+import java.util.Map;
+
+public interface DamMetadataTranslationService {
+
+    class MetadataTranslationResult {
+        private final String assetPath;
+        private final String targetLanguage;
+        private final Map<String, String> translatedMetadata;
+        private final long translationTime;
+        private final boolean success;
+        private final String errorMessage;
+
+        public MetadataTranslationResult(String assetPath, String targetLanguage,
+                                        Map<String, String> translatedMetadata, long translationTime) {
+            this.assetPath = assetPath;
+            this.targetLanguage = targetLanguage;
+            this.translatedMetadata = translatedMetadata;
+            this.translationTime = translationTime;
+            this.success = true;
+            this.errorMessage = null;
+        }
+
+        public MetadataTranslationResult(String assetPath, String errorMessage) {
+            this.assetPath = assetPath;
+            this.targetLanguage = null;
+            this.translatedMetadata = null;
+            this.translationTime = 0;
+            this.success = false;
+            this.errorMessage = errorMessage;
+        }
+
+        public String getAssetPath() { return assetPath; }
+        public String getTargetLanguage() { return targetLanguage; }
+        public Map<String, String> getTranslatedMetadata() { return translatedMetadata; }
+        public long getTranslationTime() { return translationTime; }
+        public boolean isSuccess() { return success; }
+        public String getErrorMessage() { return errorMessage; }
+    }
+
+    MetadataTranslationResult translateAssetMetadata(String assetPath, String targetLanguage,
+                                                     String category) throws TranslationException;
+
+    MetadataTranslationResult translateAssetMetadata(String assetPath, String targetLanguage,
+                                                     String category, String[] metadataFields) 
+                                                     throws TranslationException;
+
+    MetadataTranslationResult[] translateMultipleAssets(String[] assetPaths, String targetLanguage,
+                                                        String category) throws TranslationException;
+}

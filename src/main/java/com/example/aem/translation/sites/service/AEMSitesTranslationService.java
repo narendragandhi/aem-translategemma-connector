@@ -1,5 +1,7 @@
 package com.example.aem.translation.sites.service;
 
+import com.adobe.cq.dam.cfm.ContentFragment;
+import com.example.aem.translation.cfintegration.service.result.ContentFragmentTranslationResult;
 import com.example.aem.translation.service.TranslateGemmaTranslationService;
 import com.example.aem.translation.sites.service.result.*;
 import com.adobe.granite.translation.api.TranslationResult;
@@ -41,6 +43,18 @@ public interface AEMSitesTranslationService {
      * @throws TranslationException if translation fails
      */
     PageTranslationResult translatePage(Page page, String targetLanguage, String category) throws TranslationException;
+
+    /**
+     * Translates a Content Fragment.
+     *
+     * @param contentFragment The Content Fragment to translate.
+     * @param targetLanguage The target language for the translation.
+     * @param category The translation category.
+     * @return A {@link ContentFragmentTranslationResult} containing the translation details.
+     * @throws TranslationException if an error occurs during translation.
+     */
+    ContentFragmentTranslationResult translateContentFragment(
+        ContentFragment contentFragment, String targetLanguage, String category) throws TranslationException;
 
     /**
      * Translates page components within a content resource.

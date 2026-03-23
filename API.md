@@ -130,7 +130,7 @@ TranslationStatus getTranslationJobStatus(
 
 OSGi configuration interface for the service.
 
-#### Configuration Properties
+#### Basic Configuration Properties
 
 | Property | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -142,6 +142,34 @@ OSGi configuration interface for the service.
 | `maxTranslationLength()` | int | 5000 | Max characters per request |
 | `connectionTimeout()` | int | 30 | Connection timeout (seconds) |
 | `readTimeout()` | int | 60 | Read timeout (seconds) |
+
+#### Resilience Configuration (v1.2.0+)
+
+| Property | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `retryMaxAttempts()` | int | 3 | Maximum retry attempts |
+| `retryWaitDurationMs()` | long | 1000 | Wait between retries (ms) |
+| `circuitBreakerFailureRateThreshold()` | int | 50 | Failure % to open circuit |
+| `circuitBreakerSlowCallRateThreshold()` | int | 100 | Slow call % to open circuit |
+| `circuitBreakerSlowCallDurationMs()` | int | 5000 | Slow call threshold (ms) |
+| `circuitBreakerWaitDurationS()` | int | 30 | Circuit open duration (s) |
+
+#### Caching Configuration (v1.2.0+)
+
+| Property | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enableCaching()` | boolean | true | Enable translation cache |
+| `cacheMaxSize()` | int | 1000 | Maximum cache entries |
+| `cacheExpireAfterMinutes()` | int | 60 | Cache TTL (minutes) |
+
+#### Monitoring Configuration (v1.2.0+)
+
+| Property | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enableMetrics()` | boolean | true | Enable metrics collection |
+| `metricsEnabled()` | boolean | false | Enable detailed reporting |
+| `requestTimeoutSeconds()` | int | 120 | Request timeout (seconds) |
+| `batchSize()` | int | 10 | Batch translation size |
 
 ## Supported Languages
 
@@ -180,6 +208,46 @@ All methods may throw `TranslationException` with the following common scenarios
 | `TRANSLATION_FAILED` | Google Cloud API error | Check credentials and connectivity |
 | `INVALID_DIRECTION` | Unsupported language pair | Verify language codes |
 | `CONTENT_TOO_LARGE` | Exceeds max length | Split content or increase limit |
+
+### TranslateGemmaException (v1.2.0+)
+
+Custom exception with user-friendly error messages for end users:
+
+```java
+try {
+    TranslationResult result = translationService.translateString(...);
+} catch (TranslateGemmaException e) {
+    // Get user-friendly message for display
+    String userMessage = e.getUserMessage();
+    
+    // Get technical error type
+    TranslateGemmaException.ErrorType errorType = e.getErrorType();
+    
+    // Handle specific error types
+    switch (errorType) {
+        case CIRCUIT_BREAKER_OPEN:
+            // Service degraded, retry later
+            break;
+        case RATE_LIMIT_EXCEEDED:
+            // Wait and retry
+            break;
+        case CREDENTIALS_ERROR:
+            // Check GCP configuration
+            break;
+    }
+}
+```
+
+| Error Type | User Message | Cause |
+|------------|--------------|-------|
+| `TRANSLATION_FAILED` | "Translation service is temporarily unable to process your request. Please try again later." | API errors |
+| `SERVICE_UNAVAILABLE` | "Translation service is currently unavailable. Please contact your administrator." | Service not initialized |
+| `CIRCUIT_BREAKER_OPEN` | "Translation service is experiencing high error rates. Please try again later." | Too many failures |
+| `RATE_LIMIT_EXCEEDED` | "Too many translation requests. Please wait a moment and try again." | API quota exceeded |
+| `INVALID_CONFIGURATION` | "Translation service is misconfigured. Please contact your administrator." | Config errors |
+| `CREDENTIALS_ERROR` | "Unable to authenticate with translation service. Please verify credentials." | GCP auth failed |
+| `TIMEOUT` | "Translation request timed out. Please try again." | Request timeout |
+| `NETWORK_ERROR` | "Unable to connect to translation service. Please check your network connection." | Network issues |
 
 ## Usage Examples
 
@@ -309,6 +377,38 @@ public void createTranslationJob() {
 - Error rates by type
 - API quota utilization
 - Language pair distribution
+- Cache hit/miss ratio
+- Circuit breaker state
+
+### Health Check API (v1.2.0+)
+
+```java
+// Get service health status
+TranslateGemmaTranslationServiceImpl service = ...;
+String healthStatus = service.getHealthStatus();
+System.out.println(healthStatus);
+
+// Sample output:
+// TranslateGemma Service Status:
+// - Service Available: true
+// - Circuit Breaker Open: false
+// - Caching Enabled: true
+// - Metrics Enabled: true
+// - Cache Hit Rate: 45.00%
+```
+
+```java
+// Get cache statistics
+TranslationCache.CacheStats stats = service.getCacheStats();
+long hits = stats.getTranslationHitCount();
+long misses = stats.getTranslationMissCount();
+double hitRate = stats.getTranslationHitRate();
+```
+
+```java
+// Check circuit breaker state
+boolean isOpen = service.isCircuitBreakerOpen();
+```
 
 ### Logging Configuration
 ```xml
@@ -316,7 +416,81 @@ public void createTranslationJob() {
 <Logger name="com.google.cloud.vertexai" level="WARN"/>
 ```
 
+### Metrics Available (v1.2.0+)
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `translation.requests.total` | Counter | Total translation requests |
+| `translation.success.total` | Counter | Successful translations |
+| `translation.failures.total` | Counter | Failed translations |
+| `translation.cache.hits.total` | Counter | Cache hits |
+| `translation.latency` | Timer | Translation latency |
+| `translation.retry.total` | Counter | Retry attempts |
+| `translation.circuitbreaker.open.total` | Counter | Circuit breaker opens |
+
 ## Version History
+
+### Translation Provider Interface
+
+The `TranslationProvider` interface allows implementing custom translation providers as fallbacks:
+
+```java
+public interface TranslationProvider {
+    enum ProviderType {
+        TRANSLATEGEMMA,
+        GOOGLE_TRANSLATE,
+        DEEPL,
+        MICROSOFT_TRANSLATOR,
+        OPENAI,
+        OLLAMA
+    }
+    
+    String getProviderName();
+    ProviderType getProviderType();
+    boolean isAvailable();
+    
+    TranslationResult translate(String sourceText, String sourceLanguage, 
+                               String targetLanguage, ContentType contentType,
+                               String category) throws Exception;
+    
+    String detectLanguage(String text) throws Exception;
+    boolean supportsLanguagePair(String sourceLanguage, String targetLanguage);
+    
+    default double getMatchingScore() { return 0.5; }
+    default long getAverageResponseTime() { return 0; }
+}
+```
+
+### Provider Registry
+
+The `ProviderRegistry` manages multiple providers and handles failover:
+
+```java
+@Component
+public class ProviderRegistry {
+    public TranslationProvider getAvailableProvider(ProviderType preferred);
+    public TranslationProvider getPrimaryProvider();
+    public List<TranslationProvider> getAvailableProviders();
+    public TranslationProvider findProviderForLanguagePair(String source, String target);
+    public Map<String, Object> getHealthStatus();
+}
+```
+
+## Version History
+
+- **v1.2.0**: Fallback providers and enhanced integration
+  - DeepL provider integration
+  - OpenAI provider integration
+  - Ollama local provider support
+  - ProviderRegistry with automatic failover
+  - Enhanced integration tests
+  - Service user configuration (repoinit)
+
+- **v1.1.0**: Resilience and monitoring enhancements
+  - Retry with exponential backoff
+  - Circuit breaker pattern
+  - Caffeine caching
+  - Micrometer metrics
 
 - **v1.0.0**: Initial release with basic translation functionality
   - Synchronous translation support

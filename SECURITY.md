@@ -28,11 +28,15 @@ The connector integrates with Google Cloud Vertex AI API and requires proper sec
 - Length limits on translation requests
 - Content type validation
 - HTML content preservation
+- **Input sanitization to prevent prompt injection (v1.2.0+)**
+- **Language code format validation (v1.2.0+)**
+- **Content category validation (v1.2.0+)**
 
 🔧 **Recommendations**
-- Sanitize all user inputs before processing
+- Sanitize all user inputs before processing (automatic in v1.2.0+)
 - Implement rate limiting to prevent abuse
 - Monitor for unusual translation patterns
+- Review audit logs regularly
 
 ### 3. Data Privacy
 
@@ -53,6 +57,24 @@ The connector integrates with Google Cloud Vertex AI API and requires proper sec
 - HTTPS-only communication with Google Cloud
 - Configurable timeouts for network calls
 - Connection pooling for efficient resource use
+- Circuit breaker for fault isolation (v1.2.0+)
+
+### 5. Prompt Injection Protection (v1.2.0+)
+
+The connector includes built-in protection against prompt injection attacks:
+
+- **Input Sanitization**: All user input is sanitized before being used in prompts
+- **Pattern Detection**: Detects and neutralizes common prompt injection patterns
+- **Language Code Validation**: Validates language codes against ISO 639-1 format
+- **Length Limits**: Enforces maximum input length (10,000 characters)
+
+```java
+// Automatic sanitization is applied to:
+// - Source text for translation
+// - Detected language text
+// - Content categories
+String safeInput = InputSanitizer.sanitizeForPrompt(userInput);
+```
 
 ## Security Configuration
 

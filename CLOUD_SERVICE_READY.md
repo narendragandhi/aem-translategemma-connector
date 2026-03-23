@@ -205,6 +205,47 @@ For Cloud Service deployment and maintenance:
 
 ---
 
-**Last Updated**: January 18, 2026
+## Environment Variables Configuration
+
+For **AEM as a Cloud Service**, configure the TranslateGemma connector using Cloud Manager environment variables:
+
+### Required Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `GCP_PROJECT_ID` | Google Cloud Project ID | `my-aem-project` |
+
+### Optional Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GCP_LOCATION` | `us-central1` | Google Cloud region |
+| `TRANSLATION_PROVIDER` | `translategemma` | Provider: translategemma, google_translate, deepl, microsoft, openai, ollama |
+| `TRANSLATION_API_KEY` | - | API key for DeepL/Microsoft/OpenAI |
+| `MODEL_NAME` | `google/translategemma-2b-it` | Model name |
+| `DEFAULT_SOURCE_LANG` | `en` | Default source language |
+| `DEFAULT_TARGET_LANG` | `es` | Default target language |
+| `TM_ENABLED` | `true` | Enable translation memory |
+| `TM_MIN_SCORE` | `0.85` | TM fuzzy match threshold |
+| `PARALLEL_TRANSLATIONS` | `3` | Concurrent translations |
+| `RETRY_ATTEMPTS` | `2` | Retry on failure |
+
+### How to Configure in Cloud Manager
+
+1. Go to Cloud Manager
+2. Select your program
+3. Navigate to **Environment Variables**
+4. Add each variable:
+   - **Name**: Variable name from table above
+   - **Value**: Your value
+   - **Type**: `secure` for API keys, `string` for others
+
+### Sample env.example File
+
+See `env.example` for a complete list of all configurable variables.
+
+---
+
+**Last Updated**: March 9, 2026
 **Status**: Ready for AEM Cloud Service Deployment
 **Next Milestone**: Replace stub dependencies and test in Cloud Service environment
