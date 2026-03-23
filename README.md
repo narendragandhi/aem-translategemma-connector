@@ -23,7 +23,6 @@ This connector provides seamless integration between Adobe Experience Manager (A
 - **DAM Assets**: Translate asset metadata
 - **i18n Dictionaries**: Translate language dictionaries for Forms
 - **HTML Content**: Preserve HTML structure during translation
-
 ### Enterprise Features
 - **Translation Memory**: Persistent storage with fuzzy matching (SmartMatch-like functionality)
 - **Visual Context**: Capture screenshots for translator reference
@@ -32,6 +31,21 @@ This connector provides seamless integration between Adobe Experience Manager (A
 - **Retry Logic**: Automatic retry with configurable attempts
 - **Comprehensive Logging**: DEBUG-level logging for troubleshooting
 
+## Differentiators from OOTB Microsoft AEM Translator
+
+| Feature | OOTB Microsoft Translator | **AEM TranslateGemma Connector** |
+| :--- | :--- | :--- |
+| **Model Technology** | Traditional NMT (Neural Machine Translation) | **LLM-Powered (Gemma/Vertex AI)**: Context-aware, higher fluency, and adaptable tone. |
+| **Intelligence** | Basic Translation Only | **Content Intelligence**: Built-in Sentiment Analysis and Brand Compliance checking. |
+| **Resilience** | Basic AEM Retry | **Advanced Resilience**: Resilience4j integration with Circuit Breakers and Exponential Backoff. |
+| **Performance** | Standard API Latency | **Integrated Caching**: Caffeine-based caching to minimize redundant API calls and costs. |
+| **Asset Context** | Metadata only | **Visual Context Capture**: Captures page/asset screenshots for better translator context. |
+| **Data Continuity** | Basic | **Enterprise Translation Memory (TM)**: JCR-persistent storage with fuzzy matching (SmartMatch-like). |
+| **Asset Automation** | Manual Metadata Selection | **Automated Alt-Text/SEO**: Uses LLM to analyze DAM assets and generate metadata. |
+| **Cloud Native** | Java Bundle Only | **Hybrid Orchestration**: Includes Adobe App Builder actions for event-driven processing. |
+| **Observability** | Standard AEM Logs | **Advanced Metrics**: Micrometer-based metrics for tracking hit rates, latency, and costs. |
+
+## Prerequisites
 ### Production-Ready Features (v1.2.0)
 - **Resilience**: Retry with exponential backoff and circuit breaker pattern
 - **Caching**: Caffeine-based translation cache for improved performance
