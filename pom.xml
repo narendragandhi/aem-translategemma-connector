@@ -268,6 +268,7 @@
                         <Export-Package>
                             com.example.aem.translation.*;version=${project.version},
                             com.example.aem.translation.provider;version=${project.version},
+                            com.example.aem.translation.service;version=${project.version},
                             com.adobe.granite.translation.api;version=1.0.0
                         </Export-Package>
                         <Import-Package>
@@ -288,6 +289,7 @@
                             org.osgi.annotation.versioning.*;version="[1.1,2)",
                             com.google.cloud.vertexai.*;version="[0.4,1)",
                             com.fasterxml.jackson.databind.*;version="[2.15,3)",
+                            com.fasterxml.jackson.annotation.*;version="[2.15,3)",
                             org.apache.commons.lang3.*;version="[3.12,4)",
                             org.apache.http.*;version="[4.5,6)",
                             io.github.resilience4j.*;version="[2.2,3)",
@@ -307,7 +309,10 @@
                             com.example.aem.translation.dam.impl.*,
                             com.example.aem.translation.i18n.impl.*,
                             com.example.aem.translation.visualcontext.impl.*,
-                            com.example.aem.translation.provider.impl.*
+                            com.example.aem.translation.provider.impl.*,
+                            com.example.aem.translation.cfintegration.service.impl.*,
+                            com.example.aem.translation.job.impl.*,
+                            com.example.aem.translation.terminology.impl.*
                         </Private-Package>
                         <Embed-Dependency>
                             google-cloud-vertexai;inline=true,
