@@ -32,8 +32,7 @@ public class TranslationAuditServiceImpl implements TranslationAuditService {
 
         try (ResourceResolver resolver = resolverFactory.getServiceResourceResolver(authInfo)) {
             String entryName = "event-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
-            String entryPath = AUDIT_ROOT + "/" + entryName;
-
+            
             Map<String, Object> props = new HashMap<>();
             props.put("jcr:primaryType", "nt:unstructured");
             props.put("path", path);
@@ -46,16 +45,21 @@ public class TranslationAuditServiceImpl implements TranslationAuditService {
                 props.put("sentiment", sentiment.getSentiment());
                 props.put("sentimentConfidence", sentiment.getConfidence());
                 props.put("sentimentReasoning", sentiment.getReasoning());
+                props.put("inputTokens", sentiment.getInputTokens());
+                props.put("outputTokens", sentiment.getOutputTokens());
             }
 
             if (compliance != null) {
                 props.put("compliant", compliance.isCompliant());
                 props.put("complianceConfidence", compliance.getConfidence());
                 props.put("complianceReasoning", compliance.getReasoning());
+                // We add to existing tokens if sentiment was logged, or set new ones
+                int in = (Integer) props.getOrDefault("inputTokens", 0) + compliance.getInputTokens();
+                int out = (Integer) props.getOrDefault("outputTokens", 0) + compliance.getOutputTokens();
+                props.put("inputTokens", in);
+                props.put("outputTokens", out);
             }
 
-            // In a real AEM environment, we would use ResourceUtil.getOrCreateResource
-            // but for this sandbox, we'll assume the helper exists or use a simple create.
             ensureRootExists(resolver);
             resolver.create(resolver.getResource(AUDIT_ROOT), entryName, props);
             resolver.commit();
@@ -82,11 +86,11 @@ public class TranslationAuditServiceImpl implements TranslationAuditService {
                     childList.add(children.next());
                 }
                 
-                // Sort by timestamp descending
                 childList.sort((r1, r2) -> {
-                    Long t1 = r1.getValueMap().get("timestamp", Calendar.class).getTimeInMillis();
-                    Long t2 = r2.getValueMap().get("timestamp", Calendar.class).getTimeInMillis();
-                    return t2.compareTo(t1);
+                    Calendar c1 = r1.getValueMap().get("timestamp", Calendar.class);
+                    Calendar c2 = r2.getValueMap().get("timestamp", Calendar.class);
+                    if (c1 == null || c2 == null) return 0;
+                    return c2.compareTo(c1);
                 });
 
                 for (int i = 0; i < Math.min(limit, childList.size()); i++) {
@@ -96,14 +100,17 @@ public class TranslationAuditServiceImpl implements TranslationAuditService {
                     SentimentResult sr = new SentimentResult(
                         vm.get("sentiment", "UNKNOWN"),
                         vm.get("sentimentConfidence", 0.0),
-                        vm.get("sentimentReasoning", "")
+                        vm.get("sentimentReasoning", ""),
+                        vm.get("inputTokens", 0),
+                        vm.get("outputTokens", 0)
                     );
                     
                     ComplianceResult cr = new ComplianceResult(
                         vm.get("compliant", true),
-                        "", // feedback
+                        "", 
                         vm.get("complianceConfidence", 0.0),
-                        vm.get("complianceReasoning", "")
+                        vm.get("complianceReasoning", ""),
+                        0, 0 // Tokens already tracked in SR for this audit entry
                     );
 
                     entries.add(new AuditEntry(
@@ -123,7 +130,6 @@ public class TranslationAuditServiceImpl implements TranslationAuditService {
     }
 
     private void ensureRootExists(ResourceResolver resolver) throws Exception {
-        // Mocking root creation for sandbox
         Resource var = resolver.getResource("/var");
         if (var == null) return; 
         
