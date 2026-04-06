@@ -56,12 +56,7 @@ public class TranslateGemmaComplianceTest {
     @Test
     void testAnalyzeComplianceWithViolations() throws Exception {
         String content = "We offer cheap cloud services.";
-        String jsonResponse = "{\"flaggedTerm\": \"cheap\", \"suggestion\": \"cost-effective\", \"reason\": \"The term 'cheap' implies low quality.\", \"severity\": \"MEDIUM\"}";
-        
-        // Mock terminologyService to find 'cheap'
-        TerminologyMatch match = new TerminologyMatch("cheap", "cost-effective", "brand", "en", "en", 1.0f, "id-1");
-        when(terminologyService.findAllTerms(anyString(), anyString(), anyString(), anyString(), anyInt()))
-                .thenReturn(Collections.singletonList(match));
+        String jsonResponse = "{\"compliant\": false, \"feedback\": \"The term 'cheap' implies low quality.\", \"confidence\": 0.9, \"reasoning\": \"Brand guidelines recommend 'cost-effective' instead.\", \"inputTokens\": 10, \"outputTokens\": 25}";
         
         doReturn(jsonResponse).when(translationService).executeGemmaPrompt(anyString());
 
@@ -69,22 +64,21 @@ public class TranslateGemmaComplianceTest {
         
         assertNotNull(result);
         assertFalse(result.isCompliant());
-        assertEquals(1, result.getViolations().size());
-        assertEquals("cheap", result.getViolations().get(0).getFlaggedTerm());
-        assertEquals("cost-effective", result.getViolations().get(0).getSuggestion());
+        assertEquals("The term 'cheap' implies low quality.", result.getFeedback());
+        assertEquals(0.9, result.getConfidence());
     }
 
     @Test
     void testAnalyzeComplianceNoViolations() throws Exception {
         String content = "We offer premium enterprise-grade cloud infrastructure.";
+        String jsonResponse = "{\"compliant\": true, \"feedback\": \"Content is compliant.\", \"confidence\": 1.0, \"reasoning\": \"No issues found.\", \"inputTokens\": 12, \"outputTokens\": 15}";
         
-        when(terminologyService.findAllTerms(anyString(), anyString(), anyString(), anyString(), anyInt()))
-                .thenReturn(Collections.emptyList());
+        doReturn(jsonResponse).when(translationService).executeGemmaPrompt(anyString());
 
         ComplianceResult result = translationService.analyzeCompliance(content);
         
         assertNotNull(result);
         assertTrue(result.isCompliant());
-        assertTrue(result.getViolations().isEmpty());
+        assertEquals(1.0, result.getConfidence());
     }
 }

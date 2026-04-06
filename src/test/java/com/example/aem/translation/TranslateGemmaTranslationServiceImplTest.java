@@ -12,12 +12,14 @@ import com.google.cloud.vertexai.api.Content;
 import com.google.cloud.vertexai.api.Part;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
 import com.google.cloud.vertexai.generativeai.ResponseHandler;
+import org.apache.sling.event.jobs.JobManager;
+import org.apache.sling.event.jobs.Job;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy; // Import Spy
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.ByteArrayInputStream;
@@ -25,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Date;
 import java.util.Collections;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -32,9 +35,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 public class TranslateGemmaTranslationServiceImplTest { 
 
-    // Changed to @Spy to allow partial mocking of real object
     @Spy 
-    private TranslateGemmaTranslationServiceImpl translationService = new TranslateGemmaTranslationServiceImpl(); // Initialize Spy
+    private TranslateGemmaTranslationServiceImpl translationService = new TranslateGemmaTranslationServiceImpl();
 
     @Mock
     private TranslateGemmaConfig config;
@@ -43,12 +45,19 @@ public class TranslateGemmaTranslationServiceImplTest {
     private TranslationObject translationObject;
 
     @Mock
-    private GenerativeModel mockGenerativeModel; // Mock for GenerativeModel
+    private GenerativeModel mockGenerativeModel;
+
+    @Mock
+    private JobManager jobManager;
+
+    @Mock
+    private Job mockJob;
 
     @BeforeEach
     void setUp() {
         lenient().when(config.projectId()).thenReturn("test-project");
         lenient().when(config.location()).thenReturn("us-central1");
+        lenient().when(config.modelName()).thenReturn("google/gemma-4-26b-a4b-it");
         lenient().when(config.enableMetrics()).thenReturn(false);
         lenient().when(config.enableCaching()).thenReturn(false);
         lenient().when(config.retryMaxAttempts()).thenReturn(3);
@@ -57,8 +66,13 @@ public class TranslateGemmaTranslationServiceImplTest {
         lenient().when(config.circuitBreakerSlowCallRateThreshold()).thenReturn(100);
         lenient().when(config.circuitBreakerSlowCallDurationMs()).thenReturn(5000);
         lenient().when(config.circuitBreakerWaitDurationS()).thenReturn(30);
-        translationService.activate(config); // Activate the spy instance
-        translationService.setModel(mockGenerativeModel); // Set the mock GenerativeModel
+        
+        // Mock JobManager behavior
+        lenient().when(jobManager.addJob(anyString(), anyMap())).thenReturn(mockJob);
+        lenient().when(mockJob.getId()).thenReturn("test-job-id-123");
+
+        translationService.activate(config);
+        translationService.setModel(mockGenerativeModel);
     }
 
     @Test
@@ -69,44 +83,20 @@ public class TranslateGemmaTranslationServiceImplTest {
     }
 
     @Test
-    void testUploadAndTranslateObject() throws TranslationException, InterruptedException, IOException {
-        // Mock the translation object
+    void testUploadAndQueueJob() throws TranslationException, IOException {
         String originalContent = "Hello, world!";
-        String expectedTranslatedContent = "Hola, mundo!";
-
-        // Mock translationService.translateString (using doReturn().when() for spy)
-        TranslationResult mockTranslationResult = mock(TranslationResult.class); 
-        when(mockTranslationResult.getTranslation()).thenReturn(expectedTranslatedContent);
-        doReturn(mockTranslationResult).when(translationService).translateString(anyString(), anyString(), anyString(), any(TranslationConstants.ContentType.class), anyString());
 
         when(translationObject.getContent()).thenReturn(originalContent);
         when(translationObject.getPath()).thenReturn("test-object-id");
         when(translationObject.getContentType()).thenReturn(TranslationConstants.ContentType.PLAIN);
 
-        // Create a job
         String jobId = translationService.createTranslationJob("test-job", "A test job", "en", "es", new Date(), new MockTranslationState(TranslationConstants.TranslationStatus.DRAFT), null);
 
-        // Upload the object
         String objectId = translationService.uploadTranslationObject(jobId, translationObject);
         assertEquals("test-object-id", objectId);
 
-        // Allow some time for the executor to pick up the task
-        Thread.sleep(100); 
-
-        // Check the job status (will be TRANSLATED almost immediately due to mocked translateString)
-        assertEquals(TranslationConstants.TranslationStatus.TRANSLATED, translationService.getTranslationJobStatus(jobId));
-
-        // Get the translated object
-        InputStream translatedStream = translationService.getTranslatedObject(jobId, translationObject);
-        assertNotNull(translatedStream);
-        String translatedContent;
-        try {
-            translatedContent = new String(translatedStream.readAllBytes());
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read translated content", e);
-        }
-        assertEquals(expectedTranslatedContent, translatedContent);
-        verify(translationService, times(1)).translateString(anyString(), anyString(), anyString(), any(TranslationConstants.ContentType.class), anyString());
+        // Verify that a Sling Job was actually added to the topic
+        verify(jobManager, times(1)).addJob(eq("com/example/aem/translation/gemma/batch"), anyMap());
     }
 
     @Test

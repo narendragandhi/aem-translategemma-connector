@@ -7,7 +7,7 @@
 **Date:** March 14, 2026
 
 ## Objective
-Extend the `TranslateGemma` connector to support content sentiment analysis using Vertex AI (Gemma 2b-it).
+Extend the `TranslateGemma` connector to support content sentiment analysis using Vertex AI (Gemma 4 MoE).
 
 ## Requirements
 1.  Implement an `analyzeSentiment()` method in the `TranslateGemmaTranslationService`.

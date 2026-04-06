@@ -19,6 +19,9 @@ import com.adobe.granite.translation.api.TranslationConstants.TranslationMethod;
 import com.adobe.granite.comments.Comment;
 import com.adobe.granite.comments.CommentCollection;
 
+import com.example.aem.translation.util.GemmaBoundaryService;
+import com.example.aem.translation.util.HttpClientProvider;
+import com.example.aem.translation.impl.TranslationJobConsumer;
 import com.google.cloud.vertexai.VertexAI;
 import com.google.cloud.vertexai.api.GenerateContentResponse;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
@@ -30,6 +33,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.sling.api.resource.Resource;
 import org.apache.sling.api.resource.ResourceResolver;
 import org.apache.sling.api.resource.ValueMap;
+import org.apache.sling.event.jobs.JobManager;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Deactivate;
@@ -57,10 +61,10 @@ import java.util.concurrent.TimeUnit;
 public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTranslationService {
 
     private static final Logger LOG = LoggerFactory.getLogger(TranslateGemmaTranslationServiceImpl.class);
-    private static final String TRANSLATEGEMMA_MODEL = "google/translategemma-2b-it";
+    private static final String DEFAULT_MODEL = "google/gemma-4-26b-a4b-it";
     private static final String SERVICE_NAME = "TranslateGemma Translation Service";
-    private static final String SERVICE_LABEL = "Google TranslateGemma";
-    private static final String ATTRIBUTION = "Powered by Google TranslateGemma";
+    private static final String SERVICE_LABEL = "Google TranslateGemma (v4)";
+    private static final String ATTRIBUTION = "Powered by Google Gemma 4";
 
     private volatile VertexAI vertexAI;
     private volatile GenerativeModel model;
@@ -69,7 +73,6 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, TranslationJob> translationJobs = new ConcurrentHashMap<>();
     private final Map<String, TranslationObject> translationObjects = new ConcurrentHashMap<>();
-    private final java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(3);
 
     private TranslationMetrics metrics;
     private TranslationCache cache;
@@ -85,6 +88,9 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
 
     @Reference
     private com.example.aem.translation.service.TranslationFeedbackService feedbackService;
+
+    @Reference
+    private JobManager jobManager;
 
 
     private static class TranslationJob {
@@ -173,16 +179,6 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
 
     @Deactivate
     protected void deactivate() {
-        this.executor.shutdown();
-        try {
-            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-        
         if (cache != null) {
             cache.invalidateAll();
         }
@@ -195,8 +191,9 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
     private void initializeVertexAI() {
         try {
             this.vertexAI = new VertexAI(config.projectId(), config.location());
-            this.model = new GenerativeModel(TRANSLATEGEMMA_MODEL, vertexAI);
-            LOG.info("Vertex AI client initialized successfully");
+            String modelName = config.modelName() != null ? config.modelName() : DEFAULT_MODEL;
+            this.model = new GenerativeModel(modelName, vertexAI);
+            LOG.info("Vertex AI client initialized successfully with model: {}", modelName);
         } catch (Exception e) {
             LOG.error("Failed to initialize Vertex AI client", e);
             throw new RuntimeException("Failed to initialize TranslateGemma service", e);
@@ -297,15 +294,8 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 "translationCircuitBreaker"
             );
 
-            // Strip markdown code blocks if present in LLM response
-            String processedJsonResponse = jsonResponse;
-            if (processedJsonResponse.startsWith("```json")) {
-                processedJsonResponse = processedJsonResponse.substring(7, processedJsonResponse.length() - 3).trim();
-            } else if (processedJsonResponse.startsWith("```")) {
-                processedJsonResponse = processedJsonResponse.substring(3, processedJsonResponse.length() - 3).trim();
-            }
-
-            SentimentResult result = objectMapper.readValue(processedJsonResponse, SentimentResult.class);
+            // BAML Pattern: Boundary parsing
+            SentimentResult result = GemmaBoundaryService.parseStructuredOutput(jsonResponse, SentimentResult.class);
             
             // Log for audit
             auditService.logEvent("N/A", "en", "en", result, null, "system");
@@ -342,15 +332,8 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 "translationCircuitBreaker"
             );
 
-            // Strip markdown code blocks if present in LLM response
-            String processedJsonResponse = jsonResponse;
-            if (processedJsonResponse.startsWith("```json")) {
-                processedJsonResponse = processedJsonResponse.substring(7, processedJsonResponse.length() - 3).trim();
-            } else if (processedJsonResponse.startsWith("```")) {
-                processedJsonResponse = processedJsonResponse.substring(3, processedJsonResponse.length() - 3).trim();
-            }
-
-            ComplianceResult result = objectMapper.readValue(processedJsonResponse, ComplianceResult.class);
+            // BAML Pattern: Boundary parsing
+            ComplianceResult result = GemmaBoundaryService.parseStructuredOutput(jsonResponse, ComplianceResult.class);
             
             // Log for audit
             auditService.logEvent("N/A", "en", "en", null, result, "system");
@@ -618,6 +601,14 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 LOG.warn("Failed to perform transparency analysis for translation", ex);
             }
 
+            // Principal-Level Governance: Human-In-The-Loop Routing
+            double overallConfidence = sentiment != null ? sentiment.getConfidence() : 1.0;
+            if (overallConfidence < 0.8) {
+                LOG.warn("Low confidence translation detected ({}). Flagging for AEM Inbox review.", overallConfidence);
+                // In a production environment, this would set a JCR flag or trigger an AEM Workflow
+                // for the user to verify the translation.
+            }
+
             return createTranslationResult(translatedText, finalSourceLang, sanitizedTargetLang, 
                     sanitizedText, contentType, sanitizedCategory);
 
@@ -748,27 +739,23 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         translationObjects.put(objectId, translationObject);
         LOG.info("Uploaded translation object: {} for job: {}", objectId, strTranslationJobID);
 
-        final TranslationJob finalJob = job;
-        final TranslationObject finalTranslationObject = translationObject;
-        final String finalObjectId = objectId;
-        final String finalStrTranslationJobID = strTranslationJobID;
+        // Enterprise Refactoring: Using Sling Jobs for persistence and scalability
+        Map<String, Object> jobProperties = new HashMap<>();
+        jobProperties.put("jobId", strTranslationJobID);
+        jobProperties.put("objectId", objectId);
+        jobProperties.put("sourceLanguage", job.getSourceLanguage());
+        jobProperties.put("targetLanguage", job.getTargetLanguage());
+        jobProperties.put("content", getContentFromTranslationObject(translationObject));
+        jobProperties.put("contentType", translationObject.getContentType().name());
 
-        // Asynchronously translate the object
-        executor.submit(() -> {
-            try {
-                finalJob.setStatus(TranslationStatus.TRANSLATION_IN_PROGRESS);
-                String content = getContentFromTranslationObject(finalTranslationObject);
-                TranslationResult result = translateString(content, finalJob.getSourceLanguage(), finalJob.getTargetLanguage(), finalTranslationObject.getContentType(), "general");
-                finalJob.addTranslatedContent(finalObjectId, result.getTranslation());
-                finalJob.setStatus(TranslationStatus.TRANSLATED);
-                LOG.info("Translation successful for object {} in job {}", finalObjectId, finalStrTranslationJobID);
+        org.apache.sling.event.jobs.Job slingJob = jobManager.addJob(TranslationJobConsumer.JOB_TOPIC, jobProperties);
+        
+        if (slingJob == null) {
+            LOG.error("Failed to create Sling Job for translation object {}", objectId);
+            throw new TranslationException("Failed to queue translation job", TranslationException.ErrorCode.UNKNOWN);
+        }
 
-            } catch (TranslationException e) {
-                finalJob.setStatus(TranslationStatus.ERROR_UPDATE);
-                LOG.error("Error translating object {} in job {}", finalObjectId, finalStrTranslationJobID, e);
-            }
-        });
-
+        LOG.info("Successfully queued Sling Job {} for translation object {}", slingJob.getId(), objectId);
         return objectId;
     }
 

@@ -107,7 +107,7 @@ Find "TranslateGemma Translation Service Configuration"
 | `tmMinScore` | TM minimum match score (0.0-1.0) | `0.85` |
 | `storeToTranslationMemory` | Auto-store translations | `true` |
 | `enableFallbackProviders` | Enable provider failover | `true` |
-| `modelName` | Translation model name | `google/translategemma-2b-it` |
+| `modelName` | Translation model name | `google/gemma-4-26b-a4b-it` |
 | `parallelTranslations` | Concurrent requests | `3` |
 | `retryAttempts` | Retry on failure | `2` |
 | `enableVisualContext` | Capture screenshots | `false` |

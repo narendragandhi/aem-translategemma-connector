@@ -222,7 +222,7 @@ For **AEM as a Cloud Service**, configure the TranslateGemma connector using Clo
 | `GCP_LOCATION` | `us-central1` | Google Cloud region |
 | `TRANSLATION_PROVIDER` | `translategemma` | Provider: translategemma, google_translate, deepl, microsoft, openai, ollama |
 | `TRANSLATION_API_KEY` | - | API key for DeepL/Microsoft/OpenAI |
-| `MODEL_NAME` | `google/translategemma-2b-it` | Model name |
+| `MODEL_NAME` | `google/gemma-4-26b-a4b-it` | Model name |
 | `DEFAULT_SOURCE_LANG` | `en` | Default source language |
 | `DEFAULT_TARGET_LANG` | `es` | Default target language |
 | `TM_ENABLED` | `true` | Enable translation memory |

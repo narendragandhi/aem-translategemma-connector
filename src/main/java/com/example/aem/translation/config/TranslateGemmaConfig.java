@@ -106,7 +106,19 @@ public @interface TranslateGemmaConfig {
         name = "Model Name",
         description = "Translation model name (for TranslateGemma or OpenAI)"
     )
-    String modelName() default "google/translategemma-2b-it";
+    String modelName() default "google/gemma-4-26b-a4b-it";
+
+    @AttributeDefinition(
+        name = "External TM Endpoint",
+        description = "Endpoint for external translation memory store (e.g., Redis or Vector Search API)"
+    )
+    String externalTmEndpoint() default "";
+
+    @AttributeDefinition(
+        name = "Use External TM",
+        description = "Whether to use external storage for translation memory instead of JCR"
+    )
+    boolean useExternalTm() default false;
 
     @AttributeDefinition(
         name = "API Key",

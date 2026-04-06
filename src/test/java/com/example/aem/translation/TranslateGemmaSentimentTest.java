@@ -62,44 +62,44 @@ public class TranslateGemmaSentimentTest {
     @Test
     void testAnalyzeSentimentPositive() throws Exception {
         String content = "I absolutely love the new AEM authoring interface!";
-        String jsonResponse = "{\"score\": 0.9, \"label\": \"POSITIVE\", \"explanation\": \"The user expresses strong positive emotion.\" }";
+        String jsonResponse = "{\"sentiment\": \"POSITIVE\", \"confidence\": 0.9, \"reasoning\": \"The user expresses strong positive emotion.\", \"inputTokens\": 10, \"outputTokens\": 20 }";
         
         doReturn(jsonResponse).when(translationService).executeGemmaPrompt(anyString());
 
         SentimentResult result = translationService.analyzeSentiment(content);
         
         assertNotNull(result);
-        assertEquals("POSITIVE", result.getLabel());
-        assertEquals(0.9, result.getScore());
-        assertTrue(result.getScore() > 0.5);
+        assertEquals("POSITIVE", result.getSentiment());
+        assertEquals(0.9, result.getConfidence());
+        assertTrue(result.getConfidence() > 0.5);
     }
 
     @Test
     void testAnalyzeSentimentNegative() throws Exception {
         String content = "The documentation is confusing and many links are broken.";
-        String jsonResponse = "{\"score\": -0.8, \"label\": \"NEGATIVE\", \"explanation\": \"The user is frustrated with documentation quality.\" }";
+        String jsonResponse = "{\"sentiment\": \"NEGATIVE\", \"confidence\": 0.8, \"reasoning\": \"The user is frustrated with documentation quality.\", \"inputTokens\": 12, \"outputTokens\": 22 }";
         
         doReturn(jsonResponse).when(translationService).executeGemmaPrompt(anyString());
 
         SentimentResult result = translationService.analyzeSentiment(content);
         
         assertNotNull(result);
-        assertEquals("NEGATIVE", result.getLabel());
-        assertEquals(-0.8, result.getScore());
-        assertTrue(result.getScore() < -0.5);
+        assertEquals("NEGATIVE", result.getSentiment());
+        assertEquals(0.8, result.getConfidence());
+        assertTrue(result.getConfidence() > 0.5);
     }
 
     @Test
     void testAnalyzeSentimentNeutral() throws Exception {
         String content = "The report was delivered on Tuesday afternoon.";
-        String jsonResponse = "{\"score\": 0.0, \"label\": \"NEUTRAL\", \"explanation\": \"The statement is a factual observation.\" }";
+        String jsonResponse = "{\"sentiment\": \"NEUTRAL\", \"confidence\": 1.0, \"reasoning\": \"The statement is a factual observation.\", \"inputTokens\": 8, \"outputTokens\": 18 }";
         
         doReturn(jsonResponse).when(translationService).executeGemmaPrompt(anyString());
 
         SentimentResult result = translationService.analyzeSentiment(content);
         
         assertNotNull(result);
-        assertEquals("NEUTRAL", result.getLabel());
-        assertEquals(0.0, result.getScore());
+        assertEquals("NEUTRAL", result.getSentiment());
+        assertEquals(1.0, result.getConfidence());
     }
 }

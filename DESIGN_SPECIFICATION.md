@@ -286,7 +286,7 @@ interface TranslationProvider {
 | `location` | String | No | us-central1 |
 | `enabled` | boolean | No | true |
 | `translationProvider` | String | No | translategemma |
-| `modelName` | String | No | google/translategemma-2b-it |
+| `modelName` | String | No | google/gemma-4-26b-a4b-it |
 | `enableTranslationMemory` | boolean | No | true |
 | `tmMinScore` | double | No | 0.85 |
 | `enableCaching` | boolean | No | true |
