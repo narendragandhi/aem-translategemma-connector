@@ -337,7 +337,7 @@
                     <group>Example AEM</group>
                     <name>AEM TranslateGemma Connector</name>
                     <description>Translation connector using Google TranslateGemma model</description>
-                    <packageType>application</packageType>
+                    <packageType>mixed</packageType>
                     <properties>
                         <cloudManagerTarget>none</cloudManagerTarget>
                     </properties>

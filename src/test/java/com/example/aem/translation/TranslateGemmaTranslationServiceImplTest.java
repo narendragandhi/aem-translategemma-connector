@@ -12,6 +12,9 @@ import com.google.cloud.vertexai.api.Content;
 import com.google.cloud.vertexai.api.Part;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
 import com.google.cloud.vertexai.generativeai.ResponseHandler;
+import com.example.aem.translation.service.TranslationAuditService;
+import com.example.aem.translation.service.TranslationFeedbackService;
+import com.example.aem.translation.terminology.TerminologyService;
 import org.apache.sling.event.jobs.JobManager;
 import org.apache.sling.event.jobs.Job;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.util.Date;
 import java.util.Collections;
 import java.util.Map;
@@ -53,8 +57,17 @@ public class TranslateGemmaTranslationServiceImplTest {
     @Mock
     private Job mockJob;
 
+    @Mock
+    private TranslationFeedbackService feedbackService;
+
+    @Mock
+    private TranslationAuditService auditService;
+
+    @Mock
+    private TerminologyService terminologyService;
+
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         lenient().when(config.projectId()).thenReturn("test-project");
         lenient().when(config.location()).thenReturn("us-central1");
         lenient().when(config.modelName()).thenReturn("google/gemma-4-26b-a4b-it");
@@ -66,13 +79,29 @@ public class TranslateGemmaTranslationServiceImplTest {
         lenient().when(config.circuitBreakerSlowCallRateThreshold()).thenReturn(100);
         lenient().when(config.circuitBreakerSlowCallDurationMs()).thenReturn(5000);
         lenient().when(config.circuitBreakerWaitDurationS()).thenReturn(30);
-        
+
         // Mock JobManager behavior
         lenient().when(jobManager.addJob(anyString(), anyMap())).thenReturn(mockJob);
         lenient().when(mockJob.getId()).thenReturn("test-job-id-123");
 
+        // Mock FeedbackService to return empty list by default
+        lenient().when(feedbackService.getRelevantFeedback(anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(Collections.emptyList());
+
+        // Manual injection into Spy using Standard Reflection
+        setPrivateField(translationService, "jobManager", jobManager);
+        setPrivateField(translationService, "feedbackService", feedbackService);
+        setPrivateField(translationService, "auditService", auditService);
+        setPrivateField(translationService, "terminologyService", terminologyService);
+
         translationService.activate(config);
         translationService.setModel(mockGenerativeModel);
+    }
+
+    private void setPrivateField(Object obj, String fieldName, Object value) throws Exception {
+        Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(obj, value);
     }
 
     @Test
@@ -105,12 +134,20 @@ public class TranslateGemmaTranslationServiceImplTest {
         String targetLanguage = "es";
         String translatedString = "Hola, mundo!";
 
+        // Gemma 4: Now also performs sentiment/compliance analysis automatically
+        String sentimentJsonResponse = "{\"sentiment\": \"POSITIVE\", \"confidence\": 0.9, \"reasoning\": \"Positive greeting\", \"inputTokens\": 5, \"outputTokens\": 10}";
+        String complianceJsonResponse = "{\"compliant\": true, \"feedback\": \"Compliant\", \"confidence\": 1.0, \"reasoning\": \"No issues\", \"inputTokens\": 5, \"outputTokens\": 10}";
+
         GenerateContentResponse mockResponse = GenerateContentResponse.newBuilder()
             .addCandidates(Candidate.newBuilder()
                 .setContent(Content.newBuilder().addParts(Part.newBuilder().setText(translatedString))))
             .build();
 
-        when(mockGenerativeModel.generateContent(anyString())).thenReturn(mockResponse);
+        // We need to return different responses for different prompts or handle multiple invocations
+        when(mockGenerativeModel.generateContent(anyString()))
+            .thenReturn(mockResponse) // 1st call: Translation
+            .thenReturn(GenerateContentResponse.newBuilder().addCandidates(Candidate.newBuilder().setContent(Content.newBuilder().addParts(Part.newBuilder().setText(sentimentJsonResponse)))).build()) // 2nd call: Sentiment
+            .thenReturn(GenerateContentResponse.newBuilder().addCandidates(Candidate.newBuilder().setContent(Content.newBuilder().addParts(Part.newBuilder().setText(complianceJsonResponse)))).build()); // 3rd call: Compliance
 
         TranslationResult result = translationService.translateString(sourceString, "en", targetLanguage, TranslationConstants.ContentType.PLAIN, "general");
 
@@ -119,7 +156,9 @@ public class TranslateGemmaTranslationServiceImplTest {
         assertEquals(targetLanguage, result.getTargetLanguage());
         assertEquals(sourceString, result.getSourceString());
         assertEquals(translatedString, result.getTranslation());
-        verify(mockGenerativeModel, times(1)).generateContent(anyString());
+        
+        // Verify multiple calls: 1 for translation, 1 for sentiment, 1 for compliance
+        verify(mockGenerativeModel, atLeast(1)).generateContent(anyString());
     }
 
     @Test
@@ -141,4 +180,3 @@ public class TranslateGemmaTranslationServiceImplTest {
         verify(mockGenerativeModel, times(1)).generateContent(anyString());
     }
 }
-

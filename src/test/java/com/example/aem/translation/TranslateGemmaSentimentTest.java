@@ -1,9 +1,12 @@
 package com.example.aem.translation;
 
 import com.example.aem.translation.impl.TranslateGemmaTranslationServiceImpl;
-import com.example.aem.translation.model.SentimentResult;
 import com.example.aem.translation.config.TranslateGemmaConfig;
+import com.example.aem.translation.model.SentimentResult;
 import com.example.aem.translation.util.ResilienceHelper;
+import com.example.aem.translation.service.TranslationAuditService;
+import com.example.aem.translation.service.TranslationFeedbackService;
+import com.example.aem.translation.terminology.TerminologyService;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +14,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.lang.reflect.Field;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -30,6 +36,15 @@ public class TranslateGemmaSentimentTest {
     @Mock
     private ResilienceHelper resilienceHelper;
 
+    @Mock
+    private TranslationAuditService auditService;
+
+    @Mock
+    private TranslationFeedbackService feedbackService;
+
+    @Mock
+    private TerminologyService terminologyService;
+
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(config.projectId()).thenReturn("test-project");
@@ -45,6 +60,11 @@ public class TranslateGemmaSentimentTest {
         lenient().when(config.circuitBreakerSlowCallDurationMs()).thenReturn(5000);
         lenient().when(config.circuitBreakerWaitDurationS()).thenReturn(30);
         
+        // Manual injection into Spy using Standard Reflection
+        setPrivateField(translationService, "auditService", auditService);
+        setPrivateField(translationService, "feedbackService", feedbackService);
+        setPrivateField(translationService, "terminologyService", terminologyService);
+
         translationService.activate(config);
         translationService.setModel(mockGenerativeModel);
         
@@ -54,9 +74,12 @@ public class TranslateGemmaSentimentTest {
                     java.util.concurrent.Callable<String> callable = invocation.getArgument(0);
                     return callable.call();
                 });
-        
-        // Use reflection or a setter if available to inject the mocked resilienceHelper
-        // For now, we'll rely on partial mocking of the service if it creates its own
+    }
+
+    private void setPrivateField(Object obj, String fieldName, Object value) throws Exception {
+        Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(obj, value);
     }
 
     @Test

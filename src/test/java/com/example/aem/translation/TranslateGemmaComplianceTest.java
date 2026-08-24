@@ -1,8 +1,10 @@
 package com.example.aem.translation;
 
 import com.example.aem.translation.impl.TranslateGemmaTranslationServiceImpl;
-import com.example.aem.translation.model.ComplianceResult;
 import com.example.aem.translation.config.TranslateGemmaConfig;
+import com.example.aem.translation.model.ComplianceResult;
+import com.example.aem.translation.service.TranslationAuditService;
+import com.example.aem.translation.service.TranslationFeedbackService;
 import com.example.aem.translation.terminology.TerminologyService;
 import com.example.aem.translation.terminology.TerminologyMatch;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
@@ -13,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Field;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,6 +36,12 @@ public class TranslateGemmaComplianceTest {
     @Mock
     private TerminologyService terminologyService;
 
+    @Mock
+    private TranslationAuditService auditService;
+
+    @Mock
+    private TranslationFeedbackService feedbackService;
+
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(config.projectId()).thenReturn("test-project");
@@ -48,9 +57,19 @@ public class TranslateGemmaComplianceTest {
         lenient().when(config.circuitBreakerSlowCallDurationMs()).thenReturn(5000);
         lenient().when(config.circuitBreakerWaitDurationS()).thenReturn(30);
         
+        // Manual injection into Spy using Standard Reflection
+        setPrivateField(translationService, "auditService", auditService);
+        setPrivateField(translationService, "feedbackService", feedbackService);
+        setPrivateField(translationService, "terminologyService", terminologyService);
+
         translationService.activate(config);
         translationService.setModel(mockGenerativeModel);
-        translationService.setTerminologyService(terminologyService);
+    }
+
+    private void setPrivateField(Object obj, String fieldName, Object value) throws Exception {
+        Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(obj, value);
     }
 
     @Test
