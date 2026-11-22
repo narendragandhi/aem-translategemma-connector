@@ -2,5 +2,5 @@
 <jcr:root xmlns:cq="http://www.day.com/jcr/cq/1.0"
           xmlns:jcr="http://www.jcp.org/jcr/1.0"
           jcr:primaryType="cq:ClientLibraryFolder"
-          categories="[translation-gemma.ui.overlay]"
+          categories="[translation-gemma.ui.overlay,cq.sites.collectionpage,cq.siteadmin.admin,cq.gui.siteadmin.admin.pages,granite.ui.foundation.admin]"
           allowProxy="{Boolean}true"/>
