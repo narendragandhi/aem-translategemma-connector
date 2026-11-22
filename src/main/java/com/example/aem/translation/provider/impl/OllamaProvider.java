@@ -3,6 +3,8 @@ package com.example.aem.translation.provider.impl;
 import com.adobe.granite.translation.api.TranslationConstants;
 import com.adobe.granite.translation.api.TranslationResult;
 import com.example.aem.translation.provider.TranslationProvider;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ConfigurationPolicy;
@@ -11,6 +13,7 @@ import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -23,6 +26,7 @@ import java.util.*;
 public class OllamaProvider implements TranslationProvider {
 
     private static final Logger LOG = LoggerFactory.getLogger(OllamaProvider.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final Set<String> supportedLanguages = new HashSet<>(Arrays.asList(
             "en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh", "ar", "hi", "nl", "sv", "da", "no", "fi", "pl", "tr", "vi", "th", "id", "ms", "uk", "he", "fa", "ur", "bn", "ta", "te", "mr", "gu", "kn", "ml"
@@ -179,6 +183,40 @@ public class OllamaProvider implements TranslationProvider {
     }
 
     @Override
+    public String generateCompletion(String prompt) {
+        if (!isAvailable()) {
+            throw new IllegalStateException("Ollama server not available or model not installed");
+        }
+
+        String jsonBody = String.format(
+                "{\"model\": \"%s\", \"prompt\": \"%s\", \"stream\": false, \"options\": {\"temperature\": 0.1, \"num_predict\": %d}}",
+                config.model(),
+                escapeJson(prompt),
+                Math.min(config.maxTokens(), 512)
+        );
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(config.baseUrl() + "/api/generate"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .timeout(Duration.ofSeconds(config.timeoutSeconds()))
+                .build();
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Ollama API error: " + response.statusCode() + " - " + response.body());
+            }
+            return parseOllamaResponse(response.body()).trim();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to call Ollama API", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while calling Ollama API", e);
+        }
+    }
+
+    @Override
     public boolean supportsLanguagePair(String sourceLanguage, String targetLanguage) {
         return supportedLanguages.contains(sourceLanguage.toLowerCase()) &&
                supportedLanguages.contains(targetLanguage.toLowerCase());
@@ -220,14 +258,13 @@ public class OllamaProvider implements TranslationProvider {
     }
 
     private String parseOllamaResponse(String json) {
-        int responseStart = json.indexOf("\"response\":\"");
-        if (responseStart == -1) return "";
-        responseStart += 12;
-        int responseEnd = json.indexOf("\"", responseStart);
-        if (responseEnd == -1) return "";
-        
-        String text = json.substring(responseStart, responseEnd);
-        return text.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\");
+        try {
+            JsonNode node = OBJECT_MAPPER.readTree(json);
+            return node.path("response").asText("");
+        } catch (Exception e) {
+            LOG.warn("Failed to parse Ollama response as JSON", e);
+            return "";
+        }
     }
 
     private String escapeJson(String text) {

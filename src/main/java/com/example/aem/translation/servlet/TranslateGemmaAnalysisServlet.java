@@ -1,6 +1,7 @@
 package com.example.aem.translation.servlet;
 
 import com.example.aem.translation.service.TranslateGemmaTranslationService;
+import com.example.aem.translation.service.TranslationAuditService;
 import com.example.aem.translation.model.SentimentResult;
 import com.example.aem.translation.model.ComplianceResult;
 import com.example.aem.translation.model.AssetAnalysisResult;
@@ -37,6 +38,9 @@ public class TranslateGemmaAnalysisServlet extends SlingAllMethodsServlet {
     @Reference
     private TranslateGemmaTranslationService gemmaService;
 
+    @Reference
+    private TranslationAuditService auditService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -70,19 +74,27 @@ public class TranslateGemmaAnalysisServlet extends SlingAllMethodsServlet {
             // Extract content (assuming cq:Page or dam:Asset for now)
             String content = extractContent(resource);
             
+            SentimentResult sentiment = null;
+            ComplianceResult compliance = null;
+
             if (types.contains("sentiment")) {
-                SentimentResult sentiment = gemmaService.analyzeSentiment(content);
+                sentiment = gemmaService.analyzeSentiment(content);
                 result.put("sentiment", sentiment);
             }
 
             if (types.contains("compliance")) {
-                ComplianceResult compliance = gemmaService.analyzeCompliance(content);
+                compliance = gemmaService.analyzeCompliance(content);
                 result.put("compliance", compliance);
             }
 
             if (types.contains("asset") && resource.isResourceType("dam:Asset")) {
                 AssetAnalysisResult assetAnalysis = gemmaService.analyzeAsset(path, resolver);
                 result.put("asset", assetAnalysis);
+            }
+
+            if (sentiment != null || compliance != null) {
+                auditService.logEvent(path, "", "", sentiment, compliance,
+                        request.getResourceResolver().getUserID());
             }
 
             response.getWriter().write(objectMapper.writeValueAsString(result));

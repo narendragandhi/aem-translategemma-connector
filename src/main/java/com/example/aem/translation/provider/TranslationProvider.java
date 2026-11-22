@@ -26,6 +26,10 @@ public interface TranslationProvider {
 
     String detectLanguage(String text) throws Exception;
 
+    default String generateCompletion(String prompt) {
+        throw new UnsupportedOperationException("Structured prompts are not supported by " + getProviderName());
+    }
+
     boolean supportsLanguagePair(String sourceLanguage, String targetLanguage);
 
     default double getMatchingScore() {

@@ -93,6 +93,8 @@ attribute names below; the shipped config lives at
 | `enableCaching`, `cacheMaxSize`, `cacheExpireAfterMinutes` | `true`, `1000`, `60` | Caffeine cache |
 | `enableMetrics` | `true` | Registers a local `MeterRegistry` |
 
+For the local demo, the shipped OSGi config sets both analysis flags to `true`.
+
 ## Endpoints
 
 All endpoints are on the author instance by default and use the current

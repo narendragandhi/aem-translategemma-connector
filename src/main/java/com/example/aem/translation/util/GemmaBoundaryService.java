@@ -46,7 +46,7 @@ public class GemmaBoundaryService {
             return MAPPER.readValue(cleanJson, clazz);
             
         } catch (Exception e) {
-            LOG.error("Boundary Violation: Failed to parse structured output from Gemma. Raw: {}", rawResponse);
+            LOG.error("Boundary Violation: Failed to parse structured output from Gemma. Raw: {}", rawResponse, e);
             throw new RuntimeException("Gemma Output Schema Violation", e);
         }
     }

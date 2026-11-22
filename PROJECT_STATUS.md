@@ -17,8 +17,10 @@ offline against a local Ollama `translategemma:latest` model.
   (`gemma:translation_<lang>`).
 - Optional fallback to any `TranslationProvider` services installed in the
   instance; Ollama is shipped/configured for local offline translation.
+- Live sentiment/compliance analysis through the same Ollama provider; the
+  analysis endpoint writes page-keyed audit entries consumed by the overlay.
 - Feedback storage, audit log, analysis endpoint, demo translate endpoint, and a
-  small UI overlay.
+  small UI overlay wired into the AEM Sites console.
 - Service user + repoinit ACLs, OSGi config, clientlib all packaged.
 
 ## What is not production grade
@@ -43,3 +45,6 @@ offline against a local Ollama `translategemma:latest` model.
   created, audit/metrics/dashboard endpoints return JSON, and
   `POST /bin/translation-gemma/translate` translated via Ollama with and without
   an explicit source language.
+- `POST /bin/translategemma/analyze` returned live sentiment/compliance JSON and
+  created a page-keyed audit entry; the Sites console rendered the resulting
+  `Gemma:` badge.

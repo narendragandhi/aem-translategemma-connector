@@ -309,7 +309,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                         "Respond ONLY in JSON format: {\"sentiment\": \"POSITIVE|NEGATIVE|NEUTRAL\", \"confidence\": 0.95, \"reasoning\": \"The explanation...\"}\n\nText: %s",
                         sanitizedInput
                     );
-                    return executeGemmaPrompt(prompt);
+                    return executeStructuredPrompt(prompt);
                 },
                 "analyzeSentiment",
                 "translationCircuitBreaker"
@@ -347,7 +347,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                         "Respond ONLY in JSON format: {\"compliant\": true|false, \"feedback\": \"Summary...\", \"confidence\": 0.98, \"reasoning\": \"Why...\"}\n\nText: %s",
                         sanitizedInput
                     );
-                    return executeGemmaPrompt(prompt);
+                    return executeStructuredPrompt(prompt);
                 },
                 "analyzeCompliance",
                 "translationCircuitBreaker"
@@ -393,7 +393,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
             );
 
             String jsonResponse = resilienceHelper.executeWithRetryAndCircuitBreaker(
-                () -> executeGemmaPrompt(prompt),
+                () -> executeStructuredPrompt(prompt),
                 "analyzeAsset",
                 "translationCircuitBreaker"
             );
@@ -442,6 +442,24 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         } catch (java.io.IOException e) {
             throw new RuntimeException("Failed to execute Gemma prompt", e);
         }
+    }
+
+    private String executeStructuredPrompt(String prompt) {
+        if (model != null) {
+            return executeGemmaPrompt(prompt);
+        }
+
+        List<TranslationProvider> providers = fallbackProviders;
+        if (fallbackEnabled && providers != null) {
+            for (TranslationProvider provider : providers) {
+                if (provider.getProviderType() == TranslationProvider.ProviderType.OLLAMA
+                        && provider.isAvailable()) {
+                    return provider.generateCompletion(prompt);
+                }
+            }
+        }
+
+        throw new IllegalStateException("No structured-output provider available");
     }
 
     public boolean isCircuitBreakerOpen() {

@@ -39,6 +39,12 @@ Rewrite for correctness rather than feature count.
 - Fallback providers are considered when deciding service availability, so
   translation works without a Vertex AI project; language detection falls back
   too.
+- Structured analysis prompts (sentiment/compliance/asset) use the local Ollama
+  provider when Vertex AI is not configured.
+- Ollama responses are parsed with Jackson, and Jackson annotations are aligned
+  with the AEM runtime so `@JsonCreator` models deserialize correctly.
+- The author overlay clientlib is included in the Sites console via the
+  `cq.sites.collectionpage` category.
 - Build uses Java 21.
 
 ### Removed
