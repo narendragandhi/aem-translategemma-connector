@@ -1,403 +1,137 @@
 # AEM TranslateGemma Translation Connector
 
-A custom AEM translation connector that integrates Google's TranslateGemma model for high-quality machine translation. Now with enhanced features comparable to enterprise TMS solutions like Smartling.
+An AEM translation connector that translates content with a Google Gemma model
+served by Vertex AI, wiring into AEM's OOTB translation framework
+(`com.adobe.granite.translation.api.TranslationService`). With no Vertex AI
+project configured it falls back to a local Ollama model
+(`translategemma:latest`), so the demo runs entirely offline.
 
-## Overview
+This is a demo/reference implementation, not a product. It is deliberately
+small: the whole point is to show how a custom `TranslationService` is
+registered, configured, and driven by AEM translation projects/jobs.
 
-This connector provides seamless integration between Adobe Experience Manager (AEM) and Google Cloud's TranslateGemma model through Vertex AI. It implements the AEM TranslationService interface to enable automatic content translation within AEM's translation workflow.
+## What it actually does
 
-## Features
+| Area | Status |
+| --- | --- |
+| Registers as a Granite `TranslationService` | Yes (`service.ranking=100`) |
+| Translates strings/content via Vertex AI `GenerativeModel` | Yes |
+| Works with AEM translation projects and the translation cloud service | Yes |
+| Async batch jobs via Sling Jobs | Yes (`com/example/aem/translation/gemma/batch`) |
+| Redis-less in-memory cache, metrics, retry, circuit breaker | Yes |
+| Feedback capture endpoint + audit log | Yes |
+| Optional fallback to other `TranslationProvider`s | Yes; Ollama is configured for local offline use |
+| Sentiment / compliance analysis | Opt-in; heuristic model prompts, not a policy engine |
+| Translation memory, DITA/AEM Guides, visual context, MSM deltas, terminology | **Removed** — see CHANGELOG 2.0.0 |
 
-### Core Translation
-- **High-Quality Translation**: Leverages Google's TranslateGemma model for accurate translations
-- **Multi-Language Support**: Supports 20+ major languages
-- **AEM Integration**: Native integration with AEM's Translation Integration Framework
-- **Multi-Provider Support**: Configure multiple translation providers (TranslateGemma, Google Translate, DeepL, Microsoft, OpenAI, Ollama)
-- **Translation Memory**: Built-in TM with JCR persistence and fuzzy matching
-- **Fallback Providers**: Automatic failover to backup providers on failure
+## Requirements
 
-### Content Type Support
-- **Pages**: Full page translation via AEM workflow
-- **Content Fragments**: Translate structured content fragments
-- **Experience Fragments**: Translate XF variations
-- **DAM Assets**: Translate asset metadata
-- **i18n Dictionaries**: Translate language dictionaries for Forms
-- **HTML Content**: Preserve HTML structure during translation
-### Enterprise Features
-- **Translation Memory**: Persistent storage with fuzzy matching (SmartMatch-like functionality)
-- **Visual Context**: Capture screenshots for translator reference
-- **Job Dashboard**: REST API for translation job management
-- **Parallel Translation**: Configurable concurrent translation requests
-- **Retry Logic**: Automatic retry with configurable attempts
-- **Comprehensive Logging**: DEBUG-level logging for troubleshooting
+- Java 21 (build and runtime)
+- AEM 6.5.17+ / AEM as a Cloud Service with the Granite Translation API
+  (`com.adobe.granite.translation.api`)
+- Either a Google Cloud project with Vertex AI enabled and access to the model
+  in `location` (default `gemma-3-27b-it`, `us-central1`) plus Application
+  Default Credentials (or `GOOGLE_APPLICATION_CREDENTIALS`) for the AEM JVM
+- Or Ollama running locally with `ollama pull translategemma:latest` (no cloud
+  account or credentials needed)
 
-## Differentiators from OOTB Microsoft AEM Translator
-
-| Feature | OOTB Microsoft Translator | **AEM TranslateGemma Connector** |
-| :--- | :--- | :--- |
-| **Model Technology** | Traditional NMT (Neural Machine Translation) | **LLM-Powered (Gemma/Vertex AI)**: Context-aware, higher fluency, and adaptable tone. |
-| **Intelligence** | Basic Translation Only | **Content Intelligence**: Built-in Sentiment Analysis and Brand Compliance checking. |
-| **Resilience** | Basic AEM Retry | **Advanced Resilience**: Resilience4j integration with Circuit Breakers and Exponential Backoff. |
-| **Performance** | Standard API Latency | **Integrated Caching**: Caffeine-based caching to minimize redundant API calls and costs. |
-| **Asset Context** | Metadata only | **Visual Context Capture**: Captures page/asset screenshots for better translator context. |
-| **Data Continuity** | Basic | **Enterprise Translation Memory (TM)**: JCR-persistent storage with fuzzy matching (SmartMatch-like). |
-| **Asset Automation** | Manual Metadata Selection | **Automated Alt-Text/SEO**: Uses LLM to analyze DAM assets and generate metadata. |
-| **Cloud Native** | Java Bundle Only | **Hybrid Orchestration**: Includes Adobe App Builder actions for event-driven processing. |
-| **Observability** | Standard AEM Logs | **Advanced Metrics**: Micrometer-based metrics for tracking hit rates, latency, and costs. |
-
-## Prerequisites
-### Production-Ready Features (v1.2.0)
-- **Resilience**: Retry with exponential backoff and circuit breaker pattern
-- **Caching**: Caffeine-based translation cache for improved performance
-- **Metrics**: Micrometer-based metrics collection
-- **Security**: Input sanitization to prevent prompt injection
-- **Custom Exceptions**: User-friendly error messages for end users
-
-## Prerequisites
-
-1. **AEM as a Cloud Service** or **AEM 6.5+**
-2. **Google Cloud Platform Account** with:
-   - Vertex AI API enabled
-   - TranslateGemma model access
-3. **Java 11+**
-4. **Maven 3.6+**
-
-## Setup Instructions
-
-### 1. Google Cloud Setup
-
-1. Create a Google Cloud Project or use an existing one
-2. Enable the Vertex AI API:
-   ```bash
-   gcloud services enable aiplatform.googleapis.com --project=YOUR_PROJECT_ID
-   ```
-3. Set up authentication (service account key or Application Default Credentials)
-4. Ensure you have access to the TranslateGemma model in Vertex AI Model Garden
-
-### 2. Build and Deploy
+## Build
 
 ```bash
 mvn clean install
 ```
 
-Deploy the bundle to AEM:
-- Using Package Manager: Upload the generated `.jar` file
-- Using Maven: `mvn clean install -PautoInstallPackage`
+Produces two artifacts in `target/`:
 
-### 3. Configure the Service
+- `aem-translategemma-connector-2.0.0-SNAPSHOT.jar` — OSGi bundle
+  (`com.example.aem.translation.translategemma`). It embeds the Vertex AI SDK
+  and its transitive dependencies (about 40 MB, gRPC included).
+- `aem-translategemma-connector-2.0.0-SNAPSHOT.zip` — content package: OSGi
+  config, service-user mapping, repoinit (service user + ACLs), clientlib
+  overlay.
 
-Navigate to AEM Web Console: `/system/console/configMgr`
-Find "TranslateGemma Translation Service Configuration"
+## Install
 
-### 4. Configure AEM Translation Framework
+1. Install the zip (content package) and the bundle on author **and** publish,
+   or place them in an AEM project's `all`/`ui.apps`/`ui.config` modules.
+2. For Vertex AI: set `projectId` (and `location` if not `us-central1`) in
+   `/system/console/configMgr` → "TranslateGemma Translation Service", and make
+   GCP credentials available to the AEM process (ADC via
+   `GOOGLE_APPLICATION_CREDENTIALS`, or workload identity on the host).
+   For a local-only demo, leave `projectId` empty and start Ollama with
+   `translategemma:latest` installed; the shipped
+   `com.example.aem.translation.provider.impl.OllamaProvider` config points at
+   `http://localhost:11434`.
+3. Create a translation project (Sites → References → Language Copies →
+   Translate) and pick "Google Gemma (Vertex AI)" as the translation provider.
+   If the connector is not shown, enable it in
+   `/libs/cq/translation/...` translation cloud service config or grant it via
+   the `TranslationService` ranking.
 
-1. Navigate to **Tools > Cloud Services > Translation Cloud Services**
-2. Create a new cloud configuration for the TranslateGemma connector
-3. Select "TranslateGemma Translation Service" as the Translation Provider
+The bundle maps service user `translate-gemma-service` and grants it
+`jcr:all` on `/var/translation-gemma` and `/var/log/translation-gemma`, plus
+`jcr:read` on `/content` and `/content/dam`.
 
-## New Enhanced Configuration
+## Configuration
 
-| Property | Description | Default |
-|----------|-------------|---------|
-| `projectId` | Google Cloud Project ID | Required |
-| `location` | Google Cloud location | `us-central1` |
-| `enabled` | Enable/disable service | `true` |
-| `translationProvider` | Primary provider (translategemma, google_translate, deepl, openai, ollama) | `translategemma` |
-| `enableTranslationMemory` | Enable TM lookup | `true` |
-| `tmMinScore` | TM minimum match score (0.0-1.0) | `0.85` |
-| `storeToTranslationMemory` | Auto-store translations | `true` |
-| `enableFallbackProviders` | Enable provider failover | `true` |
-| `modelName` | Translation model name | `google/gemma-4-26b-a4b-it` |
-| `parallelTranslations` | Concurrent requests | `3` |
-| `retryAttempts` | Retry on failure | `2` |
-| `enableVisualContext` | Capture screenshots | `false` |
-| `enableDamTranslation` | Translate DAM metadata | `true` |
-| `enableI18nTranslation` | Translate i18n dictionaries | `true` |
-| **Production Features** |||
-| `retryMaxAttempts` | Maximum retry attempts | `3` |
-| `retryWaitDurationMs` | Wait between retries (ms) | `1000` |
-| `circuitBreakerFailureRateThreshold` | Failure % to open circuit | `50` |
-| `circuitBreakerSlowCallRateThreshold` | Slow call % to open circuit | `100` |
-| `circuitBreakerSlowCallDurationMs` | Slow call threshold (ms) | `5000` |
-| `circuitBreakerWaitDurationS` | Circuit open wait time (s) | `30` |
-| `cacheMaxSize` | Cache maximum entries | `1000` |
-| `cacheExpireAfterMinutes` | Cache TTL (minutes) | `60` |
-| `enableCaching` | Enable translation cache | `true` |
-| `enableMetrics` | Enable metrics collection | `true` |
-| `requestTimeoutSeconds` | Request timeout (seconds) | `120` |
-| `batchSize` | Batch translation size | `10` |
+All configuration is OSGi (`TranslateGemmaConfig`). Property names are the
+attribute names below; the shipped config lives at
+`/apps/example/translategemma/config`.
 
-## Usage
+| Property | Default | Notes |
+| --- | --- | --- |
+| `projectId` | *(empty)* | GCP project; empty means ADC default project |
+| `location` | `us-central1` | Vertex AI region |
+| `enabled` | `true` | Master switch for the connector |
+| `modelName` | `gemma-3-27b-it` | Model/deployment name |
+| `defaultContentCategory` | `general` | Category reported in `TranslationServiceInfo` |
+| `enableFallbackProviders` | `true` | Use `TranslationProvider`s if Gemma fails |
+| `enableSentimentAnalysis` | `false` | Adds a sentiment/quality heuristic to prompts |
+| `enableComplianceCheck` | `false` | Adds a compliance heuristic to prompts |
+| `retryMaxAttempts`, `retryWaitDurationMs` | `3`, `1000` | Resilience4j retry |
+| `circuitBreakerFailureRateThreshold`, `circuitBreakerSlowCallRateThreshold`, `circuitBreakerSlowCallDurationMs`, `circuitBreakerWaitDurationS` | `50`, `100`, `5000`, `30` | Resilience4j circuit breaker |
+| `enableCaching`, `cacheMaxSize`, `cacheExpireAfterMinutes` | `true`, `1000`, `60` | Caffeine cache |
+| `enableMetrics` | `true` | Registers a local `MeterRegistry` |
 
-### Basic Translation
+## Endpoints
 
-```java
-@Reference
-private TranslateGemmaTranslationService translationService;
+All endpoints are on the author instance by default and use the current
+session; secure them before exposing publicly.
 
-TranslationResult result = translationService.translateString(
-    content, "en", "es", ContentType.HTML, "general"
-);
-```
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/bin/translation-gemma/translate` | Quick translation: body `{"text": "Hello", "sourceLang": "en", "targetLang": "fr"}` (`sourceLang` optional, auto-detected) |
+| POST | `/bin/translategemma/analyze` | Analyze a resource; body `{"path": "/content/...", "types": ["sentiment"]}` |
+| GET | `/bin/translationgemma/dashboard` | Stats, all jobs (`?jobs=true`), `?jobId=...`, or `?status=...` |
+| POST | `/bin/translationgemma/dashboard` | Job actions: `action=create/start/pause/cancel/addObjects` |
+| GET | `/bin/translation-gemma/audit` | Recent audit entries (`?limit=N`) |
+| GET | `/bin/translation-gemma/metrics` | Aggregate translation metrics |
+| POST | `/bin/translation-gemma/feedback` | Record human feedback |
 
-### Translation Memory
+See `API.md` for request/response bodies.
 
-```java
-@Reference
-private TranslationMemoryService tmService;
-
-// Find matches
-List<TMEntry> matches = tmService.findMatches(
-    sourceText, "en", "es", ContentType.HTML, "general", 0.85, 5
-);
-
-// Store translation
-tmService.storeTranslation(source, target, "en", "es", 
-    ContentType.HTML, "general", "/content/page", 5);
-```
-
-### Content Fragment Translation
-
-```java
-@Reference
-private ContentFragmentTranslationService cfService;
-
-ContentFragmentTranslationResult result = cfService.translateContentFragment(
-    fragment, "fr", "marketing"
-);
-```
-
-### DAM Metadata Translation
-
-```java
-@Reference
-private DamMetadataTranslationService damService;
-
-MetadataTranslationResult result = damService.translateAssetMetadata(
-    "/content/dam/image.jpg", "de", "general", 
-    new String[]{"dc:title", "dc:description", "dc:subject"}
-);
-```
-
-### i18n Dictionary Translation
-
-```java
-@Reference
-private I18nDictionaryTranslationService i18nService;
-
-DictionaryTranslationResult result = i18nService.translateDictionary(
-    "/libs/my-app/i18n/en", "ja", "general", true
-);
-```
-
-### Visual Context
-
-```java
-@Reference
-private VisualContextService vcService;
-
-ContextCapture capture = vcService.capturePageContext("/content/site/en/home");
-byte[] screenshot = capture.getScreenshot();
-```
-
-### Job Management Dashboard
+## Development
 
 ```bash
-# Get dashboard stats
-GET /bin/translationgemma/dashboard/stats
-
-# Get all jobs
-GET /bin/translationgemma/dashboard/jobs
-
-# Get job by ID
-GET /bin/translationgemma/dashboard/jobs?jobId=xxx
-
-# Get jobs by status
-GET /bin/translationgemma/dashboard/jobs?status=TRANSLATION_IN_PROGRESS
-
-# Create job
-POST /bin/translationgemma/dashboard/jobs?action=create&name=MyJob&sourceLanguage=en&targetLanguage=fr
-
-# Start job
-POST /bin/translationgemma/dashboard/jobs?action=start&jobId=xxx
-```
-
-## Supported Languages
-
-| Code | Language | Code | Language |
-|------|----------|------|----------|
-| en   | English  | fr   | French   |
-| es   | Spanish  | de   | German   |
-| pt   | Portuguese | it   | Italian  |
-| ru   | Russian  | ja   | Japanese |
-| ko   | Korean   | zh   | Chinese  |
-| ar   | Arabic   | hi   | Hindi    |
-| nl   | Dutch    | sv   | Swedish  |
-| da   | Danish   | no   | Norwegian |
-| fi   | Finnish  | pl   | Polish   |
-| tr   | Turkish  |      |          |
-
-## Project Structure
-
-```
-src/main/java/com/example/aem/translation/
-├── config/
-│   └── TranslateGemmaConfig.java           # Enhanced OSGi configuration
-├── service/
-│   └── TranslateGemmaTranslationService.java  # Main service interface
-├── impl/
-│   ├── TranslateGemmaTranslationServiceImpl.java  # Main implementation
-│   └── TranslateGemmaBundleActivator.java
-├── tm/
-│   ├── TranslationMemoryService.java         # TM interface
-│   └── tm/impl/
-│       └── JcrTranslationMemoryServiceImpl.java  # JCR-based TM
-├── xf/
-│   ├── ExperienceFragmentTranslationService.java
-│   └── xf/impl/
-│       └── ExperienceFragmentTranslationServiceImpl.java
-├── dam/
-│   ├── DamMetadataTranslationService.java
-│   └── dam/impl/
-│       └── DamMetadataTranslationServiceImpl.java
-├── i18n/
-│   ├── I18nDictionaryTranslationService.java
-│   └── i18n/impl/
-│       └── I18nDictionaryTranslationServiceImpl.java
-├── visualcontext/
-│   ├── VisualContextService.java
-│   └── visualcontext/impl/
-│       └── VisualContextServiceImpl.java
-├── job/
-│   ├── TranslationJobManager.java
-│   └── job/impl/
-│       └── TranslationJobManagerImpl.java
-├── servlet/
-│   └── TranslationDashboardServlet.java      # REST API
-└── provider/
-    └── TranslationProvider.java               # Multi-provider interface
-```
-
-## Comparing to Smartling
-
-| Feature | TranslateGemma | Smartling |
-|---------|---------------|-----------|
-| Content Fragments | ✅ | ✅ |
-| Experience Fragments | ✅ | ✅ |
-| DAM Metadata | ✅ | ✅ |
-| i18n Dictionaries | ✅ | ✅ |
-| Translation Memory | ✅ (Basic) | ✅ (Advanced) |
-| Visual Context | ✅ (HTTP) | ✅ (Full) |
-| Multi-Provider | ✅ (6 providers) | ✅ (20+ MT) |
-| Job Dashboard | ✅ REST API | ✅ Full UI |
-| Human Translation | ❌ | ✅ (4K+ linguists) |
-| LQA Tools | ❌ | ✅ |
-| Instant Translation | ❌ | ✅ |
-
-## Building
-
-```bash
+mvn test     # unit tests (10)
 mvn clean install
 ```
 
-## Troubleshooting
+The tests stub out the Vertex AI `GenerativeModel` via the package-private
+`setModel(...)` seam; no GCP credentials are needed to build or test.
 
-### Enable Debug Logging
+## Known limitations
 
-```xml
-<Logger name="com.example.aem.translation" level="DEBUG"/>
-<Logger name="com.google.cloud.vertexai" level="DEBUG"/>
-```
+- The job dashboard is in-memory and per-instance; use Sling Jobs for
+  production work (the consumer already persists to
+  `gemma:translation_<lang>` on the target node).
+- The bundle embeds the full Vertex AI/gRPC stack (~40 MB) and marks
+  netty/grpc optional imports as `resolution:=optional`. Prefer a REST-based
+  client if bundle size matters.
+- Sentiment/compliance are prompt-level heuristics, not enforced policy.
+- Fallback providers implement the project's own `TranslationProvider`
+  interface. Ollama is configured locally; DeepL and OpenAI are samples only.
 
-### Common Issues
+## License
 
-#### 1. Service Not Available
-- Check Google Cloud authentication
-- Verify Vertex AI API is enabled
-- Confirm project ID and location are correct
-- Check service account has required permissions
-
-#### 2. Translation Fails
-- Verify source/target language codes
-- Check content length limits (default: 5000 chars)
-- Review Google Cloud quotas
-- Check circuit breaker status via health check
-
-#### 3. Configuration Issues
-- Ensure OSGi configuration is saved
-- Check service ranking if multiple translators exist (use ranking=100)
-- Verify bundle is active in /system/console/bundles
-
-#### 4. High Error Rates
-- Check circuit breaker is not open: `service.isCircuitBreakerOpen()`
-- Review health status: `service.getHealthStatus()`
-- Check GCP quotas in Google Cloud Console
-
-#### 5. Performance Issues
-- Enable caching: `enableCaching=true`
-- Check cache hit rate in health status
-- Increase cache size: `cacheMaxSize=5000`
-- Adjust batch size: `batchSize=20`
-
-#### 6. AEM Cloud Service Issues
-- Verify environment variables in Cloud Manager
-- Check Cloud Manager logs for errors
-- Ensure secrets are configured as secrets (not variables)
-- Verify GCP service account has Vertex AI access
-
-### Diagnostic Commands
-
-```bash
-# Check bundle status
-curl -u admin:admin http://localhost:4502/system/console/bundles/com.example.aem.translation
-
-# Test translation directly
-curl -X POST -u admin:admin http://localhost:4502/bin/translationgemma/dashboard/stats
-
-# Check configuration
-curl -u admin:admin http://localhost:4502/system/console/configMgr/com.example.aem.translation.config.TranslateGemmaConfig
-```
-
-### Health Check (v1.2.0+)
-
-```java
-// In a JSP or servlet
-TranslateGemmaTranslationServiceImpl service = ...;
-out.println(service.getHealthStatus());
-```
-
-Output example:
-```
-TranslateGemma Service Status:
-- Service Available: true
-- Circuit Breaker Open: false
-- Caching Enabled: true
-- Metrics Enabled: true
-- Cache Hit Rate: 45.00%
-```
-
-## Version History
-
-- **1.2.0**: Production-ready release
-  - Resilience: Retry with exponential backoff
-  - Resilience: Circuit breaker pattern
-  - Performance: Caffeine-based translation cache
-  - Monitoring: Micrometer metrics
-  - Security: Input sanitization
-  - Security: Custom exceptions with user-friendly messages
-  - Health check endpoint
-
-- **1.1.0**: Enhanced feature release
-  - Translation Memory with JCR persistence
-  - Multi-provider support (DeepL, Microsoft, OpenAI, Ollama)
-  - Experience Fragment translation
-  - DAM metadata translation
-  - i18n dictionary translation
-  - Visual context capture
-  - Job management dashboard with REST API
-
-- **1.0.0**: Initial release
-  - Basic translation functionality
-  - OSGi configuration
-  - AEM Translation Framework integration
-  - Support for 20+ languages
+Apache License 2.0.

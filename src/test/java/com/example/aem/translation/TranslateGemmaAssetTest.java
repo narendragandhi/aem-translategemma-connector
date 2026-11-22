@@ -46,6 +46,7 @@ public class TranslateGemmaAssetTest {
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(config.projectId()).thenReturn("test-project");
+        lenient().when(config.enabled()).thenReturn(true);
         lenient().when(config.location()).thenReturn("us-central1");
         lenient().when(config.enableCaching()).thenReturn(false);
         lenient().when(config.enableMetrics()).thenReturn(false);

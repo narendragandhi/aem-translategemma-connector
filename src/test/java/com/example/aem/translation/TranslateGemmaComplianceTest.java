@@ -5,8 +5,6 @@ import com.example.aem.translation.config.TranslateGemmaConfig;
 import com.example.aem.translation.model.ComplianceResult;
 import com.example.aem.translation.service.TranslationAuditService;
 import com.example.aem.translation.service.TranslationFeedbackService;
-import com.example.aem.translation.terminology.TerminologyService;
-import com.example.aem.translation.terminology.TerminologyMatch;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,8 +31,6 @@ public class TranslateGemmaComplianceTest {
     @Mock
     private GenerativeModel mockGenerativeModel;
     
-    @Mock
-    private TerminologyService terminologyService;
 
     @Mock
     private TranslationAuditService auditService;
@@ -45,6 +41,7 @@ public class TranslateGemmaComplianceTest {
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(config.projectId()).thenReturn("test-project");
+        lenient().when(config.enabled()).thenReturn(true);
         lenient().when(config.location()).thenReturn("us-central1");
         lenient().when(config.enableCaching()).thenReturn(false);
         lenient().when(config.enableMetrics()).thenReturn(false);
@@ -60,7 +57,6 @@ public class TranslateGemmaComplianceTest {
         // Manual injection into Spy using Standard Reflection
         setPrivateField(translationService, "auditService", auditService);
         setPrivateField(translationService, "feedbackService", feedbackService);
-        setPrivateField(translationService, "terminologyService", terminologyService);
 
         translationService.activate(config);
         translationService.setModel(mockGenerativeModel);

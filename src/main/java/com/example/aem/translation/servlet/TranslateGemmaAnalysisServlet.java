@@ -14,6 +14,8 @@ import org.apache.sling.api.servlets.HttpConstants;
 import org.apache.sling.api.servlets.SlingAllMethodsServlet;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.servlet.Servlet;
 import java.io.IOException;
@@ -29,6 +31,8 @@ import java.util.Map;
     }
 )
 public class TranslateGemmaAnalysisServlet extends SlingAllMethodsServlet {
+
+    private static final Logger LOG = LoggerFactory.getLogger(TranslateGemmaAnalysisServlet.class);
 
     @Reference
     private TranslateGemmaTranslationService gemmaService;
@@ -84,8 +88,9 @@ public class TranslateGemmaAnalysisServlet extends SlingAllMethodsServlet {
             response.getWriter().write(objectMapper.writeValueAsString(result));
 
         } catch (Exception e) {
+            LOG.error("Analysis request failed", e);
             response.setStatus(SlingHttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            result.put("error", e.getMessage());
+            result.put("error", "Analysis failed");
             response.getWriter().write(objectMapper.writeValueAsString(result));
         }
     }

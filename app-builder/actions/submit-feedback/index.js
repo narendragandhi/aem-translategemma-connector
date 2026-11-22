@@ -1,49 +1,52 @@
-const fetch = require('node-fetch');
+const { Core } = require('@adobe/aio-sdk');
 
-/**
- * App Builder Action to submit human feedback to AEM.
- * This makes the HITL loop cloud-native.
- */
+function json(statusCode, body) {
+  return { statusCode, headers: { 'Content-Type': 'application/json' }, body };
+}
+
 async function main(params) {
-  const { path, source, correction, aemHost, accessToken } = params;
+  const logger = Core.Logger('submit-feedback', { level: params.LOG_LEVEL || 'info' });
 
-  if (!path || !source || !correction || !aemHost) {
-    return {
-      statusCode: 400,
-      body: { error: 'Missing required parameters' }
-    };
+  const { sourceString, originalTranslation, humanCorrection, sourceLang, targetLang } = params;
+  const host = (params.aem_host || '').replace(/\/$/, '');
+
+  if (!sourceString || !humanCorrection || !sourceLang || !targetLang) {
+    return json(400, { error: 'sourceString, humanCorrection, sourceLang and targetLang are required' });
+  }
+  if (!host) {
+    return json(500, { error: 'aem_host is not configured' });
   }
 
-  const url = `${aemHost}/bin/translation-gemma/feedback`;
-  
+  const auth = params.aem_token
+    ? `Bearer ${params.aem_token}`
+    : (params.__ow_headers && params.__ow_headers.authorization) || '';
+  if (!auth) {
+    return json(401, { error: 'No authorization token available' });
+  }
+
   try {
-    const response = await fetch(url, {
+    const response = await fetch(`${host}/bin/translation-gemma/feedback`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: new URLSearchParams({
-        path,
-        source,
-        correction
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceString,
+        originalTranslation: originalTranslation || '',
+        humanCorrection,
+        sourceLang,
+        targetLang
       })
     });
 
     if (!response.ok) {
-      throw new Error(`AEM responded with ${response.status}`);
+      const text = await response.text();
+      logger.error(`AEM feedback failed (${response.status}): ${text}`);
+      return json(502, { error: 'AEM feedback request failed', status: response.status });
     }
 
-    return {
-      statusCode: 200,
-      body: { message: 'Feedback submitted successfully via App Builder' }
-    };
-
+    return json(200, { message: 'Feedback recorded' });
   } catch (error) {
-    return {
-      statusCode: 500,
-      body: { error: error.message }
-    };
+    logger.error(`Request to AEM failed: ${error.message}`);
+    return json(502, { error: 'Request to AEM failed' });
   }
 }
 

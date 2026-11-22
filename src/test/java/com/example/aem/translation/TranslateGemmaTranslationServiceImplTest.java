@@ -2,7 +2,6 @@ import com.adobe.granite.translation.api.TranslationConstants;
 import com.adobe.granite.translation.api.TranslationException;
 import com.adobe.granite.translation.api.TranslationObject;
 import com.adobe.granite.translation.api.TranslationResult; // Explicitly import TranslationResult
-import com.example.aem.translation.mock.MockTranslationState;
 import com.adobe.granite.translation.api.TranslationState;
 import com.example.aem.translation.config.TranslateGemmaConfig;
 import com.example.aem.translation.impl.TranslateGemmaTranslationServiceImpl;
@@ -14,7 +13,6 @@ import com.google.cloud.vertexai.generativeai.GenerativeModel;
 import com.google.cloud.vertexai.generativeai.ResponseHandler;
 import com.example.aem.translation.service.TranslationAuditService;
 import com.example.aem.translation.service.TranslationFeedbackService;
-import com.example.aem.translation.terminology.TerminologyService;
 import org.apache.sling.event.jobs.JobManager;
 import org.apache.sling.event.jobs.Job;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,12 +61,11 @@ public class TranslateGemmaTranslationServiceImplTest {
     @Mock
     private TranslationAuditService auditService;
 
-    @Mock
-    private TerminologyService terminologyService;
 
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(config.projectId()).thenReturn("test-project");
+        lenient().when(config.enabled()).thenReturn(true);
         lenient().when(config.location()).thenReturn("us-central1");
         lenient().when(config.modelName()).thenReturn("google/gemma-4-26b-a4b-it");
         lenient().when(config.enableMetrics()).thenReturn(false);
@@ -92,10 +89,38 @@ public class TranslateGemmaTranslationServiceImplTest {
         setPrivateField(translationService, "jobManager", jobManager);
         setPrivateField(translationService, "feedbackService", feedbackService);
         setPrivateField(translationService, "auditService", auditService);
-        setPrivateField(translationService, "terminologyService", terminologyService);
 
         translationService.activate(config);
         translationService.setModel(mockGenerativeModel);
+    }
+
+    private static final class MockState implements TranslationState {
+        private TranslationConstants.TranslationStatus status;
+        private com.adobe.granite.comments.Comment comment;
+
+        MockState(TranslationConstants.TranslationStatus status) {
+            this.status = status;
+        }
+
+        @Override
+        public TranslationConstants.TranslationStatus getStatus() {
+            return status;
+        }
+
+        @Override
+        public void setStatus(TranslationConstants.TranslationStatus status) {
+            this.status = status;
+        }
+
+        @Override
+        public com.adobe.granite.comments.Comment getComment() {
+            return comment;
+        }
+
+        @Override
+        public void setComment(com.adobe.granite.comments.Comment comment) {
+            this.comment = comment;
+        }
     }
 
     private void setPrivateField(Object obj, String fieldName, Object value) throws Exception {
@@ -106,7 +131,7 @@ public class TranslateGemmaTranslationServiceImplTest {
 
     @Test
     void testCreateTranslationJob() throws TranslationException {
-        String jobId = translationService.createTranslationJob("test-job", "A test job", "en", "es", new Date(), new MockTranslationState(TranslationConstants.TranslationStatus.DRAFT), null);
+        String jobId = translationService.createTranslationJob("test-job", "A test job", "en", "es", new Date(), new MockState(TranslationConstants.TranslationStatus.DRAFT), null);
         assertNotNull(jobId);
         assertEquals(TranslationConstants.TranslationStatus.DRAFT, translationService.getTranslationJobStatus(jobId));
     }
@@ -115,11 +140,12 @@ public class TranslateGemmaTranslationServiceImplTest {
     void testUploadAndQueueJob() throws TranslationException, IOException {
         String originalContent = "Hello, world!";
 
-        when(translationObject.getContent()).thenReturn(originalContent);
-        when(translationObject.getPath()).thenReturn("test-object-id");
-        when(translationObject.getContentType()).thenReturn(TranslationConstants.ContentType.PLAIN);
+        when(translationObject.getTranslationObjectInputStream())
+                .thenReturn(new ByteArrayInputStream(originalContent.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        when(translationObject.getTranslationObjectSourcePath()).thenReturn("test-object-id");
+        when(translationObject.getMimeType()).thenReturn("text/plain");
 
-        String jobId = translationService.createTranslationJob("test-job", "A test job", "en", "es", new Date(), new MockTranslationState(TranslationConstants.TranslationStatus.DRAFT), null);
+        String jobId = translationService.createTranslationJob("test-job", "A test job", "en", "es", new Date(), new MockState(TranslationConstants.TranslationStatus.DRAFT), null);
 
         String objectId = translationService.uploadTranslationObject(jobId, translationObject);
         assertEquals("test-object-id", objectId);
@@ -134,20 +160,12 @@ public class TranslateGemmaTranslationServiceImplTest {
         String targetLanguage = "es";
         String translatedString = "Hola, mundo!";
 
-        // Gemma 4: Now also performs sentiment/compliance analysis automatically
-        String sentimentJsonResponse = "{\"sentiment\": \"POSITIVE\", \"confidence\": 0.9, \"reasoning\": \"Positive greeting\", \"inputTokens\": 5, \"outputTokens\": 10}";
-        String complianceJsonResponse = "{\"compliant\": true, \"feedback\": \"Compliant\", \"confidence\": 1.0, \"reasoning\": \"No issues\", \"inputTokens\": 5, \"outputTokens\": 10}";
-
         GenerateContentResponse mockResponse = GenerateContentResponse.newBuilder()
             .addCandidates(Candidate.newBuilder()
                 .setContent(Content.newBuilder().addParts(Part.newBuilder().setText(translatedString))))
             .build();
 
-        // We need to return different responses for different prompts or handle multiple invocations
-        when(mockGenerativeModel.generateContent(anyString()))
-            .thenReturn(mockResponse) // 1st call: Translation
-            .thenReturn(GenerateContentResponse.newBuilder().addCandidates(Candidate.newBuilder().setContent(Content.newBuilder().addParts(Part.newBuilder().setText(sentimentJsonResponse)))).build()) // 2nd call: Sentiment
-            .thenReturn(GenerateContentResponse.newBuilder().addCandidates(Candidate.newBuilder().setContent(Content.newBuilder().addParts(Part.newBuilder().setText(complianceJsonResponse)))).build()); // 3rd call: Compliance
+        when(mockGenerativeModel.generateContent(anyString())).thenReturn(mockResponse);
 
         TranslationResult result = translationService.translateString(sourceString, "en", targetLanguage, TranslationConstants.ContentType.PLAIN, "general");
 
@@ -157,8 +175,8 @@ public class TranslateGemmaTranslationServiceImplTest {
         assertEquals(sourceString, result.getSourceString());
         assertEquals(translatedString, result.getTranslation());
         
-        // Verify multiple calls: 1 for translation, 1 for sentiment, 1 for compliance
-        verify(mockGenerativeModel, atLeast(1)).generateContent(anyString());
+        // Transparency analysis is opt-in, so exactly one LLM call is expected
+        verify(mockGenerativeModel, times(1)).generateContent(anyString());
     }
 
     @Test

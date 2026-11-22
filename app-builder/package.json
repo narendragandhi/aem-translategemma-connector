@@ -1,15 +1,12 @@
 {
   "name": "aem-gemma-orchestrator",
-  "version": "1.0.0",
-  "description": "App Builder action to orchestrate content intelligence via Gemma",
+  "version": "2.0.0",
+  "description": "App Builder actions that call the TranslateGemma connector in AEM",
   "dependencies": {
     "@adobe/aio-sdk": "^3.0.0",
-    "node-fetch": "^2.6.7"
+    "node-fetch": "^2.7.0"
   },
-  "devDependencies": {
-    "jest": "^27.0.0"
-  },
-  "scripts": {
-    "test": "jest"
+  "engines": {
+    "node": ">=18"
   }
 }

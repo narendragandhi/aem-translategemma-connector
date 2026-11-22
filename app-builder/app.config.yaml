@@ -1,6 +1,5 @@
 application:
   actions: actions
-  web: web-src
   runtimeManifest:
     packages:
       aem-gemma:
@@ -9,9 +8,21 @@ application:
           on-content-modified:
             function: actions/on-content-modified/index.js
             web: 'no'
-            runtime: 'nodejs:18'
+            runtime: 'nodejs:22'
             inputs:
               aem_host: "$AEM_HOST"
               aem_token: "$AEM_TOKEN"
+              LOG_LEVEL: "$LOG_LEVEL"
             annotations:
               require-adobe-auth: true
+              final: true
+          submit-feedback:
+            function: actions/submit-feedback/index.js
+            web: 'yes'
+            runtime: 'nodejs:22'
+            inputs:
+              aem_host: "$AEM_HOST"
+              LOG_LEVEL: "$LOG_LEVEL"
+            annotations:
+              require-adobe-auth: true
+              final: true

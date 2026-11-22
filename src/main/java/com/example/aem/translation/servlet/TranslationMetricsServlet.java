@@ -1,7 +1,7 @@
 package com.example.aem.translation.servlet;
 
 import com.example.aem.translation.service.TranslationAuditService;
-import com.google.gson.Gson;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.sling.api.SlingHttpServletRequest;
 import org.apache.sling.api.SlingHttpServletResponse;
 import org.apache.sling.api.servlets.SlingSafeMethodsServlet;
@@ -24,6 +24,8 @@ import java.util.Map;
 )
 public class TranslationMetricsServlet extends SlingSafeMethodsServlet {
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     @Reference
     private TranslationAuditService auditService;
 
@@ -35,26 +37,29 @@ public class TranslationMetricsServlet extends SlingSafeMethodsServlet {
         
         long totalInputTokens = 0;
         long totalOutputTokens = 0;
-        int totalPages = entries.size();
         
         Map<String, Integer> langUsage = new HashMap<>();
 
         for (TranslationAuditService.AuditEntry entry : entries) {
-            totalInputTokens += entry.getSentiment().getInputTokens();
-            totalOutputTokens += entry.getSentiment().getOutputTokens();
+            if (entry.getSentiment() != null) {
+                totalInputTokens += entry.getSentiment().getInputTokens();
+                totalOutputTokens += entry.getSentiment().getOutputTokens();
+            }
             
             String lang = entry.getTargetLanguage();
-            langUsage.put(lang, langUsage.getOrDefault(lang, 0) + 1);
+            if (lang != null) {
+                langUsage.put(lang, langUsage.getOrDefault(lang, 0) + 1);
+            }
         }
 
         Map<String, Object> metrics = new HashMap<>();
         metrics.put("totalInputTokens", totalInputTokens);
         metrics.put("totalOutputTokens", totalOutputTokens);
-        metrics.put("totalPagesTranslated", totalPages);
+        metrics.put("totalEvents", entries.size());
         metrics.put("languageDistribution", langUsage);
-        metrics.put("estimatedSavingsTokens", totalPages * 500); // Mock: 500 tokens saved per MSM skip
 
         response.setContentType("application/json");
-        response.getWriter().write(new Gson().toJson(metrics));
+        response.setCharacterEncoding("UTF-8");
+        objectMapper.writeValue(response.getWriter(), metrics);
     }
 }

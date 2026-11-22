@@ -31,6 +31,7 @@ public class TranslationJobConsumer implements JobConsumer {
     private static final Logger LOG = LoggerFactory.getLogger(TranslationJobConsumer.class);
     public static final String JOB_TOPIC = "com/example/aem/translation/gemma/batch";
     private static final String PROPERTY_IDEMPOTENCY_KEY = "gemma:translationKey";
+    private static final String PROPERTY_TRANSLATED_PREFIX = "gemma:translation_";
 
     @Reference
     private TranslateGemmaTranslationService translationService;
@@ -45,10 +46,9 @@ public class TranslationJobConsumer implements JobConsumer {
         String sourceLanguage = job.getProperty("sourceLanguage", String.class);
         String targetLanguage = job.getProperty("targetLanguage", String.class);
         String content = job.getProperty("content", String.class);
-        String contentType = job.getProperty("contentType", "text/plain");
+        String contentType = job.getProperty("contentType", "PLAIN");
 
-        // The Principal's Choice: Identify the model version for the hash
-        String modelName = "gemma-4-26b-a4b-it"; 
+        String modelName = translationService.getTranslationServiceInfo().getTranslationServiceName();
 
         LOG.info("Processing durable translation job: {} for object: {}", jobId, objectId);
 
@@ -69,17 +69,35 @@ public class TranslationJobConsumer implements JobConsumer {
             }
 
             // 2. Perform the actual (expensive) translation
-            translationService.translateString(
-                content, 
-                sourceLanguage, 
-                targetLanguage, 
-                com.adobe.granite.translation.api.TranslationConstants.ContentType.valueOf(contentType), 
+            String sourceContent = content;
+            if (sourceContent == null || sourceContent.isEmpty()) {
+                sourceContent = extractContent(targetResource);
+            }
+            if (sourceContent == null || sourceContent.isEmpty()) {
+                LOG.error("Job has no translatable content for {}. Abandoning job.", objectId);
+                return JobResult.CANCEL;
+            }
+
+            com.adobe.granite.translation.api.TranslationConstants.ContentType parsedContentType;
+            try {
+                parsedContentType = com.adobe.granite.translation.api.TranslationConstants.ContentType
+                        .valueOf(contentType.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                parsedContentType = com.adobe.granite.translation.api.TranslationConstants.ContentType.PLAIN;
+            }
+
+            com.adobe.granite.translation.api.TranslationResult result = translationService.translateString(
+                sourceContent,
+                sourceLanguage,
+                targetLanguage,
+                parsedContentType,
                 "general"
             );
 
-            // 3. Persist the fingerprint for the next run
+            // 3. Persist the translated content next to the source and the fingerprint
             ModifiableValueMap mvm = targetResource.adaptTo(ModifiableValueMap.class);
             if (mvm != null) {
+                mvm.put(PROPERTY_TRANSLATED_PREFIX + targetLanguage, result.getTranslation());
                 mvm.put(PROPERTY_IDEMPOTENCY_KEY, currentFingerprint);
                 resolver.commit();
             }
@@ -90,6 +108,19 @@ public class TranslationJobConsumer implements JobConsumer {
             LOG.error("Failed to process idempotent translation job for {}. Error: {}", objectId, e.getMessage());
             return JobResult.FAILED; // Triggers automatic retry by Sling
         }
+    }
+
+    private String extractContent(Resource resource) {
+        Resource contentResource = resource.getChild("jcr:content");
+        org.apache.sling.api.resource.ValueMap vm =
+                (contentResource != null ? contentResource : resource).getValueMap();
+        for (String key : new String[]{"jcr:description", "dc:description", "jcr:title", "dc:title"}) {
+            String value = vm.get(key, String.class);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private ResourceResolver getServiceResolver() throws Exception {

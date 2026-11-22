@@ -21,12 +21,21 @@
                     var reasoning = entry.sentiment ? entry.sentiment.reasoning : "No reasoning provided.";
                     
                     var color = confidence > 85 ? "#28a745" : (confidence > 60 ? "#ffc107" : "#dc3545");
-                    
-                    var $badge = $('<div class="gemma-insight-badge" title="' + reasoning + '" style="' +
-                        'display: inline-block; padding: 2px 6px; border-radius: 4px; color: white; ' +
-                        'font-size: 10px; margin-left: 10px; background-color: ' + color + ';">' +
-                        'Gemma: ' + sentiment + ' (' + confidence + '%)</div>');
-                    
+
+                    // Build with text()/attr() so model-provided strings can never inject markup
+                    var $badge = $("<div class=\"gemma-insight-badge\">")
+                        .attr("title", reasoning)
+                        .text("Gemma: " + sentiment + " (" + confidence + "%)")
+                        .css({
+                            display: "inline-block",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            color: "#fff",
+                            fontSize: "10px",
+                            marginLeft: "10px",
+                            backgroundColor: color
+                        });
+
                     // Inject badge into the title or status area of the list item
                     $item.find(".foundation-collection-item-title").append($badge);
                 }
@@ -34,10 +43,14 @@
         });
     }
 
+    var pollStarted = false;
+
     $(document).on("foundation-contentloaded", function () {
         applyGemmaInsights();
-        // Poll for updates every 30 seconds
-        setInterval(applyGemmaInsights, 30000);
+        if (!pollStarted) {
+            pollStarted = true;
+            setInterval(applyGemmaInsights, 30000);
+        }
     });
 
 })(Granite.$, document);

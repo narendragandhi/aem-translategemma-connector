@@ -6,7 +6,6 @@ import com.example.aem.translation.model.SentimentResult;
 import com.example.aem.translation.util.ResilienceHelper;
 import com.example.aem.translation.service.TranslationAuditService;
 import com.example.aem.translation.service.TranslationFeedbackService;
-import com.example.aem.translation.terminology.TerminologyService;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,12 +41,11 @@ public class TranslateGemmaSentimentTest {
     @Mock
     private TranslationFeedbackService feedbackService;
 
-    @Mock
-    private TerminologyService terminologyService;
 
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(config.projectId()).thenReturn("test-project");
+        lenient().when(config.enabled()).thenReturn(true);
         lenient().when(config.location()).thenReturn("us-central1");
         lenient().when(config.enableCaching()).thenReturn(false);
         lenient().when(config.enableMetrics()).thenReturn(false);
@@ -63,7 +61,6 @@ public class TranslateGemmaSentimentTest {
         // Manual injection into Spy using Standard Reflection
         setPrivateField(translationService, "auditService", auditService);
         setPrivateField(translationService, "feedbackService", feedbackService);
-        setPrivateField(translationService, "terminologyService", terminologyService);
 
         translationService.activate(config);
         translationService.setModel(mockGenerativeModel);

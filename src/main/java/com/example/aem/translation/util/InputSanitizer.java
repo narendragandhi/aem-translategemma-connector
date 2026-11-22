@@ -10,7 +10,6 @@ public class InputSanitizer {
     private static final Logger LOG = LoggerFactory.getLogger(InputSanitizer.class);
 
     private static final int MAX_INPUT_LENGTH = 50000;
-    private static final int MAX_SOURCE_TEXT_LENGTH = 10000;
 
     private static final Pattern DANGEROUS_CHARS_PATTERN = Pattern.compile(
         "[\u0000-\u001F\u007F-\u009F]"
@@ -30,10 +29,10 @@ public class InputSanitizer {
 
         sanitized = DANGEROUS_CHARS_PATTERN.matcher(sanitized).replaceAll("");
 
-        if (sanitized.length() > MAX_SOURCE_TEXT_LENGTH) {
-            LOG.warn("Input text exceeds maximum length, truncating from {} to {}", 
-                    sanitized.length(), MAX_SOURCE_TEXT_LENGTH);
-            sanitized = sanitized.substring(0, MAX_SOURCE_TEXT_LENGTH);
+        if (sanitized.length() > MAX_INPUT_LENGTH) {
+            LOG.warn("Input text exceeds maximum length, truncating from {} to {}",
+                    sanitized.length(), MAX_INPUT_LENGTH);
+            sanitized = sanitized.substring(0, MAX_INPUT_LENGTH);
         }
 
         return sanitized;
@@ -83,9 +82,10 @@ public class InputSanitizer {
 
         String sanitized = sanitizeInputText(input);
 
+        // Detection is for logging/alerting only. Rewriting user content here
+        // corrupts legitimate copy (e.g. the ordinary word "disregard").
         if (containsPromptInjection(sanitized)) {
-            LOG.warn("Potential prompt injection detected, sanitizing");
-            sanitized = sanitized.replaceAll("(?i)(ignore previous instructions|ignore all previous|system prompt|you are now|disregard|forget everything)", "[filtered]");
+            LOG.warn("Potential prompt injection pattern detected in translation input");
         }
 
         return sanitized;

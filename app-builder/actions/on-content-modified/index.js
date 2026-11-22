@@ -1,57 +1,58 @@
 const { Core } = require('@adobe/aio-sdk');
-const fetch = require('node-fetch');
 
-/**
- * App Builder action to handle AEM content modification events.
- */
+function json(statusCode, body) {
+  return { statusCode, headers: { 'Content-Type': 'application/json' }, body };
+}
+
 async function main(params) {
   const logger = Core.Logger('on-content-modified', { level: params.LOG_LEVEL || 'info' });
-  
+
+  const event = params.event || {};
+  const path = event.data && event.data.payload && event.data.payload.path;
+
+  if (!path) {
+    logger.warn('Ignoring event without data.payload.path');
+    return json(400, { error: 'Invalid event payload: data.payload.path is required' });
+  }
+
+  const host = (params.aem_host || '').replace(/\/$/, '');
+  if (!host) {
+    logger.error('aem_host is not configured');
+    return json(500, { error: 'aem_host is not configured' });
+  }
+
+  const auth = params.aem_token
+    ? `Bearer ${params.aem_token}`
+    : (params.__ow_headers && params.__ow_headers.authorization) || '';
+  if (!auth) {
+    logger.error('No AEM token available');
+    return json(401, { error: 'No authorization token available' });
+  }
+
+  const types = (params.analysis_types || 'sentiment,compliance')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+
   try {
-    const { event, aem_host, aem_token } = params;
-    
-    if (!event || !event.data || !event.data.payload) {
-      return { statusCode: 400, body: { error: 'Invalid event payload' } };
-    }
-
-    const payloadPath = event.data.payload.path;
-    logger.info(`Received content modification event for: ${payloadPath}`);
-
-    // 1. Authenticate and call AEM Intelligence API
-    // (Note: Endpoint to be implemented in AEM project)
-    const apiUrl = `${aem_host}/bin/translategemma/analyze`;
-    
-    const response = await fetch(apiUrl, {
+    const response = await fetch(`${host}/bin/translategemma/analyze`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${aem_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        path: payloadPath,
-        types: ['sentiment', 'compliance']
-      })
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, types })
     });
 
     if (!response.ok) {
-      throw new Error(`AEM API failed with status ${response.status}`);
+      const text = await response.text();
+      logger.error(`AEM analyze failed (${response.status}): ${text}`);
+      return json(502, { error: 'AEM analyze request failed', status: response.status });
     }
 
     const result = await response.json();
-    logger.info(`Successfully analyzed content: ${JSON.stringify(result)}`);
-
-    return { 
-      statusCode: 200, 
-      body: { 
-        message: 'Content analysis orchestrated successfully',
-        path: payloadPath,
-        result: result 
-      } 
-    };
-
+    logger.info(`Analyzed ${path}`);
+    return json(200, { message: 'Analysis complete', path, result });
   } catch (error) {
-    logger.error(error);
-    return Core.Response.errorResponse(500, error.message, logger);
+    logger.error(`Request to AEM failed: ${error.message}`);
+    return json(502, { error: 'Request to AEM failed' });
   }
 }
 

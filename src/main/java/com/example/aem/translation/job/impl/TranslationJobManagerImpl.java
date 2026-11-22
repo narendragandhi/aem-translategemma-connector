@@ -3,6 +3,8 @@ package com.example.aem.translation.job.impl;
 import com.example.aem.translation.job.TranslationJobManager;
 import com.adobe.granite.translation.api.TranslationConstants;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,8 +26,16 @@ public class TranslationJobManagerImpl implements TranslationJobManager {
     private final Map<String, JobInfo> jobs = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
+    @Reference
+    private org.apache.sling.event.jobs.JobManager jobManager;
+
     public TranslationJobManagerImpl() {
         scheduler.scheduleAtFixedRate(this::cleanupOldJobs, 1, 1, TimeUnit.HOURS);
+    }
+
+    @Deactivate
+    protected void deactivate() {
+        scheduler.shutdownNow();
     }
 
     @Override
@@ -122,9 +132,22 @@ public class TranslationJobManagerImpl implements TranslationJobManager {
             jobInfo.getCreatedBy()
         );
 
+        int queued = 0;
+        for (String objectPath : jobInfo.getObjectPaths()) {
+            Map<String, Object> props = new HashMap<>();
+            props.put("jobId", jobInfo.getJobId());
+            props.put("objectId", objectPath);
+            props.put("sourceLanguage", jobInfo.getSourceLanguage());
+            props.put("targetLanguage", jobInfo.getTargetLanguage());
+            if (jobManager.addJob(com.example.aem.translation.impl.TranslationJobConsumer.JOB_TOPIC, props) != null) {
+                queued++;
+            }
+        }
+
         jobs.put(jobId, updatedJob);
-        
-        LOG.info("Started translation job: {}", jobId);
+
+        LOG.info("Started translation job: {} ({} of {} objects queued)",
+                jobId, queued, jobInfo.getObjectPaths().size());
     }
 
     @Override

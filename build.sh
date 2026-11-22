@@ -11,7 +11,7 @@ AEM_PORT=${AEM_PORT:-4502}
 AEM_USER=${AEM_USER:-admin}
 AEM_PASSWORD=${AEM_PASSWORD:-admin}
 BUNDLE_NAME="aem-translategemma-connector"
-VERSION="1.0.0-SNAPSHOT"
+VERSION="2.0.0-SNAPSHOT"
 
 echo "🔧 Building AEM TranslateGemma Connector..."
 
@@ -32,15 +32,21 @@ fi
 if [ "$1" == "deploy" ]; then
     echo "🚀 Deploying to AEM at ${AEM_HOST}:${AEM_PORT}..."
     
-    # Install bundle using curl
+    # Install content package, then bundle
     curl -u "${AEM_USER}:${AEM_PASSWORD}" \
+         -F "cmd=upload" \
+         -F "force=true" \
+         -F "package=@target/${BUNDLE_NAME}-${VERSION}.zip" \
+         "http://${AEM_HOST}:${AEM_PORT}/crx/packmgr/service.jsp"
+    curl -u "${AEM_USER}:${AEM_PASSWORD}" \
+         -X POST \
          -F "action=install" \
          -F "bundlefile=@target/${BUNDLE_NAME}-${VERSION}.jar" \
          -F "start=true" \
          "http://${AEM_HOST}:${AEM_PORT}/system/console/bundles"
     
     if [ $? -eq 0 ]; then
-        echo "✅ Bundle deployed successfully!"
+        echo "✅ Package and bundle deployed successfully!"
         echo "🔗 Check status: http://${AEM_HOST}:${AEM_PORT}/system/console/bundles"
     else
         echo "❌ Deployment failed!"

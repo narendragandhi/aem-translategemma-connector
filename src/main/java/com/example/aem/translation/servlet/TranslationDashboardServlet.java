@@ -33,50 +33,40 @@ public class TranslationDashboardServlet extends SlingAllMethodsServlet {
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
 
-        String pathInfo = request.getPathInfo();
-
         try {
-            if (pathInfo == null || pathInfo.equals("/") || pathInfo.equals("/stats")) {
+            String jobId = request.getParameter("jobId");
+            String statusParam = request.getParameter("status");
+            boolean jobsView = "true".equals(request.getParameter("jobs"));
+
+            if (jobId == null && statusParam == null && !jobsView) {
                 Map<String, Object> stats = jobManager.getDashboardStats();
                 objectMapper.writeValue(response.getWriter(), stats);
-                
-            } else if (pathInfo.startsWith("/jobs")) {
-                String jobId = request.getParameter("jobId");
-                
+            } else {
                 if (jobId != null) {
                     TranslationJobManager.JobInfo jobInfo = jobManager.getJobInfo(jobId);
                     if (jobInfo != null) {
                         objectMapper.writeValue(response.getWriter(), jobInfo);
                     } else {
                         response.setStatus(SlingHttpServletResponse.SC_NOT_FOUND);
-                        objectMapper.writeValue(response.getWriter(), 
+                        objectMapper.writeValue(response.getWriter(),
                             Map.of("error", "Job not found", "jobId", jobId));
                     }
+                } else if (statusParam != null) {
+                    TranslationConstants.TranslationStatus status =
+                        TranslationConstants.TranslationStatus.valueOf(statusParam.toUpperCase());
+                    TranslationJobManager.JobInfo[] jobs = jobManager.getJobsByStatus(status);
+                    objectMapper.writeValue(response.getWriter(), jobs);
                 } else {
-                    String statusParam = request.getParameter("status");
-                    
-                    if (statusParam != null) {
-                        TranslationConstants.TranslationStatus status = 
-                            TranslationConstants.TranslationStatus.valueOf(statusParam.toUpperCase());
-                        TranslationJobManager.JobInfo[] jobs = jobManager.getJobsByStatus(status);
-                        objectMapper.writeValue(response.getWriter(), jobs);
-                    } else {
-                        TranslationJobManager.JobInfo[] jobs = jobManager.getAllJobs();
-                        objectMapper.writeValue(response.getWriter(), jobs);
-                    }
+                    TranslationJobManager.JobInfo[] jobs = jobManager.getAllJobs();
+                    objectMapper.writeValue(response.getWriter(), jobs);
                 }
-                
-            } else {
-                response.setStatus(SlingHttpServletResponse.SC_NOT_FOUND);
-                objectMapper.writeValue(response.getWriter(), 
-                    Map.of("error", "Unknown endpoint", "path", pathInfo));
             }
             
         } catch (Exception e) {
             LOG.error("Error processing dashboard request", e);
             response.setStatus(SlingHttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            objectMapper.writeValue(response.getWriter(), 
-                Map.of("error", e.getMessage()));
+            objectMapper.writeValue(response.getWriter(),
+                Map.of("error", "Internal error while reading dashboard data"));
         }
     }
 
@@ -87,10 +77,7 @@ public class TranslationDashboardServlet extends SlingAllMethodsServlet {
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
 
-        String pathInfo = request.getPathInfo();
-
         try {
-            if (pathInfo != null && pathInfo.startsWith("/jobs")) {
                 String action = request.getParameter("action");
                 
                 if ("create".equals(action)) {
@@ -113,25 +100,37 @@ public class TranslationDashboardServlet extends SlingAllMethodsServlet {
                         Map.of("jobId", jobId, "status", "created"));
                         
                 } else if ("start".equals(action)) {
-                    String jobId = request.getParameter("jobId");
+                    String jobId = requireJobId(request, response);
+                    if (jobId == null) {
+                        return;
+                    }
                     jobManager.startJob(jobId);
                     objectMapper.writeValue(response.getWriter(), 
                         Map.of("jobId", jobId, "status", "started"));
                         
                 } else if ("pause".equals(action)) {
-                    String jobId = request.getParameter("jobId");
+                    String jobId = requireJobId(request, response);
+                    if (jobId == null) {
+                        return;
+                    }
                     jobManager.pauseJob(jobId);
                     objectMapper.writeValue(response.getWriter(), 
                         Map.of("jobId", jobId, "status", "paused"));
                         
                 } else if ("cancel".equals(action)) {
-                    String jobId = request.getParameter("jobId");
+                    String jobId = requireJobId(request, response);
+                    if (jobId == null) {
+                        return;
+                    }
                     jobManager.cancelJob(jobId);
                     objectMapper.writeValue(response.getWriter(), 
                         Map.of("jobId", jobId, "status", "cancelled"));
                         
                 } else if ("addObjects".equals(action)) {
-                    String jobId = request.getParameter("jobId");
+                    String jobId = requireJobId(request, response);
+                    if (jobId == null) {
+                        return;
+                    }
                     String[] objects = request.getParameterValues("objects");
                     
                     if (objects != null) {
@@ -148,18 +147,12 @@ public class TranslationDashboardServlet extends SlingAllMethodsServlet {
                     objectMapper.writeValue(response.getWriter(), 
                         Map.of("error", "Unknown action", "action", action));
                 }
-                
-            } else {
-                response.setStatus(SlingHttpServletResponse.SC_NOT_FOUND);
-                objectMapper.writeValue(response.getWriter(), 
-                    Map.of("error", "Unknown endpoint"));
-            }
             
         } catch (Exception e) {
             LOG.error("Error processing dashboard request", e);
             response.setStatus(SlingHttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            objectMapper.writeValue(response.getWriter(), 
-                Map.of("error", e.getMessage()));
+            objectMapper.writeValue(response.getWriter(),
+                Map.of("error", "Internal error while processing dashboard request"));
         }
     }
 
@@ -186,8 +179,18 @@ public class TranslationDashboardServlet extends SlingAllMethodsServlet {
         } catch (Exception e) {
             LOG.error("Error deleting job", e);
             response.setStatus(SlingHttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            objectMapper.writeValue(response.getWriter(), 
-                Map.of("error", e.getMessage()));
+            objectMapper.writeValue(response.getWriter(),
+                Map.of("error", "Internal error while deleting job"));
         }
+    }
+
+    private String requireJobId(SlingHttpServletRequest request, SlingHttpServletResponse response)
+            throws IOException {
+        String jobId = request.getParameter("jobId");
+        if (jobId == null || jobId.isBlank()) {
+            response.setStatus(SlingHttpServletResponse.SC_BAD_REQUEST);
+            objectMapper.writeValue(response.getWriter(), Map.of("error", "jobId parameter required"));
+        }
+        return jobId;
     }
 }

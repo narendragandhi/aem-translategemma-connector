@@ -4,8 +4,6 @@ import com.example.aem.translation.service.TranslateGemmaTranslationService;
 import com.example.aem.translation.model.SentimentResult;
 import com.example.aem.translation.model.ComplianceResult;
 import com.example.aem.translation.model.AssetAnalysisResult;
-import com.example.aem.translation.terminology.TerminologyService;
-import com.example.aem.translation.terminology.TerminologyMatch;
 import com.example.aem.translation.config.TranslateGemmaConfig;
 import com.example.aem.translation.util.TranslationMetrics;
 import com.example.aem.translation.util.TranslationCache;
@@ -20,15 +18,12 @@ import com.adobe.granite.comments.Comment;
 import com.adobe.granite.comments.CommentCollection;
 
 import com.example.aem.translation.util.GemmaBoundaryService;
-import com.example.aem.translation.util.HttpClientProvider;
-import com.example.aem.translation.impl.TranslationJobConsumer;
+import com.example.aem.translation.provider.TranslationProvider;
 import com.google.cloud.vertexai.VertexAI;
 import com.google.cloud.vertexai.api.GenerateContentResponse;
 import com.google.cloud.vertexai.generativeai.GenerativeModel;
 import com.google.cloud.vertexai.generativeai.ResponseHandler;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.sling.api.resource.Resource;
 import org.apache.sling.api.resource.ResourceResolver;
@@ -51,7 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 @Component(
-    service = TranslateGemmaTranslationService.class,
+    service = {TranslationService.class, TranslateGemmaTranslationService.class},
     immediate = true,
     property = {
         "service.ranking:Integer=100"
@@ -61,27 +56,30 @@ import java.util.concurrent.TimeUnit;
 public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTranslationService {
 
     private static final Logger LOG = LoggerFactory.getLogger(TranslateGemmaTranslationServiceImpl.class);
-    private static final String DEFAULT_MODEL = "google/gemma-4-26b-a4b-it";
+    private static final String DEFAULT_MODEL = "gemma-3-27b-it";
     private static final String SERVICE_NAME = "TranslateGemma Translation Service";
-    private static final String SERVICE_LABEL = "Google TranslateGemma (v4)";
-    private static final String ATTRIBUTION = "Powered by Google Gemma 4";
+    private static final String SERVICE_LABEL = "Google Gemma (Vertex AI)";
+    private static final String ATTRIBUTION = "Powered by Google Gemma via Vertex AI";
 
     private volatile VertexAI vertexAI;
     private volatile GenerativeModel model;
     private TranslateGemmaConfig config;
     private final Map<String, String> supportedLanguages = new ConcurrentHashMap<>();
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, TranslationJob> translationJobs = new ConcurrentHashMap<>();
     private final Map<String, TranslationObject> translationObjects = new ConcurrentHashMap<>();
 
     private TranslationMetrics metrics;
     private TranslationCache cache;
     private ResilienceHelper resilienceHelper;
-    private boolean metricsEnabled;
-    private boolean cachingEnabled;
+    private SimpleMeterRegistry meterRegistry;
+    private volatile boolean metricsEnabled;
+    private volatile boolean cachingEnabled;
+    private volatile boolean transparencyEnabled;
+    private volatile boolean fallbackEnabled;
 
-    @Reference
-    private TerminologyService terminologyService;
+    @Reference(cardinality = org.osgi.service.component.annotations.ReferenceCardinality.MULTIPLE,
+               policy = org.osgi.service.component.annotations.ReferencePolicy.DYNAMIC)
+    private volatile List<TranslationProvider> fallbackProviders;
 
     @Reference
     private com.example.aem.translation.service.TranslationAuditService auditService;
@@ -98,7 +96,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         private final String sourceLanguage;
         private final String targetLanguage;
         private volatile TranslationStatus status;
-        private final List<String> objectIds = new ArrayList<>();
+        private final List<String> objectIds = new java.util.concurrent.CopyOnWriteArrayList<>();
         private final Map<String, String> translatedContent = new ConcurrentHashMap<>();
 
 
@@ -146,22 +144,32 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
     @Modified
     public void activate(TranslateGemmaConfig config) {
         this.config = config;
-        
+
         this.metricsEnabled = config.enableMetrics();
         this.cachingEnabled = config.enableCaching();
-        
-        if (metricsEnabled) {
-            MeterRegistry meterRegistry = new SimpleMeterRegistry();
-            this.metrics = new TranslationMetrics(meterRegistry);
-            LOG.info("Metrics enabled for TranslateGemma service");
+        this.transparencyEnabled = config.enableSentimentAnalysis() || config.enableComplianceCheck();
+        this.fallbackEnabled = config.enableFallbackProviders();
+
+        if (this.meterRegistry != null) {
+            this.meterRegistry.close();
         }
-        
+        this.meterRegistry = null;
+        if (metricsEnabled) {
+            this.meterRegistry = new SimpleMeterRegistry();
+            this.metrics = new TranslationMetrics(this.meterRegistry);
+            LOG.info("Metrics enabled for TranslateGemma service");
+        } else {
+            this.metrics = null;
+        }
+
         if (cachingEnabled) {
             this.cache = new TranslationCache(config.cacheMaxSize(), config.cacheExpireAfterMinutes());
-            LOG.info("Caching enabled with maxSize={}, expireAfterMinutes={}", 
+            LOG.info("Caching enabled with maxSize={}, expireAfterMinutes={}",
                     config.cacheMaxSize(), config.cacheExpireAfterMinutes());
+        } else {
+            this.cache = null;
         }
-        
+
         this.resilienceHelper = new ResilienceHelper.Builder()
                 .maxRetries(config.retryMaxAttempts())
                 .waitDurationMillis(config.retryWaitDurationMs())
@@ -170,8 +178,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 .slowCallDurationMillis(config.circuitBreakerSlowCallDurationMs())
                 .circuitBreakerWaitDurationSeconds(config.circuitBreakerWaitDurationS())
                 .build();
-        
-        initializeVertexAI();
+
         initializeSupportedLanguages();
         LOG.info("TranslateGemma Translation Service activated with project: {}, location: {}", 
                 config.projectId(), config.location());
@@ -182,32 +189,46 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         if (cache != null) {
             cache.invalidateAll();
         }
-        
+        if (meterRegistry != null) {
+            meterRegistry.close();
+            meterRegistry = null;
+        }
+
+        VertexAI client = this.vertexAI;
         this.vertexAI = null;
         this.model = null;
+        if (client != null) {
+            try {
+                client.close();
+            } catch (Exception e) {
+                LOG.warn("Failed to close Vertex AI client", e);
+            }
+        }
         LOG.info("TranslateGemma Translation Service deactivated");
     }
 
-    private void initializeVertexAI() {
+    private synchronized void ensureInitialized() {
+        if (this.vertexAI != null || this.model != null) {
+            return;
+        }
+        if (config == null || config.projectId() == null || config.projectId().trim().isEmpty()) {
+            return;
+        }
         try {
-            this.vertexAI = new VertexAI(config.projectId(), config.location());
+            VertexAI client = new VertexAI(config.projectId(), config.location());
             String modelName = config.modelName() != null ? config.modelName() : DEFAULT_MODEL;
-            this.model = new GenerativeModel(modelName, vertexAI);
-            LOG.info("Vertex AI client initialized successfully with model: {}", modelName);
+            this.model = new GenerativeModel(modelName, client);
+            this.vertexAI = client;
+            LOG.info("Vertex AI client initialized with model: {}", modelName);
         } catch (Exception e) {
-            LOG.error("Failed to initialize Vertex AI client", e);
-            throw new RuntimeException("Failed to initialize TranslateGemma service", e);
+            LOG.error("Failed to initialize Vertex AI client for project {}: {}",
+                    config.projectId(), e.getMessage());
         }
     }
 
-    // Protected method for testing to inject a mock GenerativeModel
+    // Used by unit tests to inject a mock model
     public void setModel(GenerativeModel mockModel) {
         this.model = mockModel;
-    }
-
-    // Protected method for testing to inject a mock TerminologyService
-    public void setTerminologyService(TerminologyService terminologyService) {
-        this.terminologyService = terminologyService;
     }
 
     private void initializeSupportedLanguages() {
@@ -377,14 +398,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 "translationCircuitBreaker"
             );
 
-            // Clean JSON
-            if (jsonResponse.startsWith("```json")) {
-                jsonResponse = jsonResponse.substring(7, jsonResponse.length() - 3).trim();
-            } else if (jsonResponse.startsWith("```")) {
-                jsonResponse = jsonResponse.substring(3, jsonResponse.length() - 3).trim();
-            }
-
-            return objectMapper.readValue(jsonResponse, AssetAnalysisResult.class);
+            return GemmaBoundaryService.parseStructuredOutput(jsonResponse, AssetAnalysisResult.class);
 
         } catch (Exception e) {
             LOG.error("Error analyzing asset metadata", e);
@@ -393,7 +407,27 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
     }
 
     public boolean isServiceAvailable() {
-        return vertexAI != null && model != null;
+        if (config != null && !config.enabled()) {
+            return false;
+        }
+        ensureInitialized();
+        if (model != null) {
+            return true;
+        }
+        List<TranslationProvider> providers = fallbackProviders;
+        if (!fallbackEnabled || providers == null) {
+            return false;
+        }
+        for (TranslationProvider provider : providers) {
+            try {
+                if (provider.isAvailable()) {
+                    return true;
+                }
+            } catch (Exception e) {
+                LOG.debug("Fallback provider {} unavailable: {}", provider.getProviderName(), e.getMessage());
+            }
+        }
+        return false;
     }
 
     /**
@@ -457,7 +491,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         }
 
         if (!InputSanitizer.isValidInput(detectSource)) {
-            throw new TranslationException("Invalid input for language detection", TranslationException.ErrorCode.UNKNOWN);
+            throw new TranslationException("Invalid input for language detection", TranslationException.ErrorCode.GENERAL_EXCEPTION);
         }
 
         String sanitizedInput = InputSanitizer.sanitizeForPrompt(detectSource);
@@ -476,9 +510,12 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
             String detectedLang = resilienceHelper.executeWithRetryAndCircuitBreaker(
                 () -> {
                     try {
-                        String prompt = String.format("Detect the language of this text and respond with only the ISO 639-1 language code: %s", sanitizedInput);
-                        GenerateContentResponse response = model.generateContent(prompt);
-                        return ResponseHandler.getText(response).trim().toLowerCase();
+                        if (model != null) {
+                            String prompt = String.format("Detect the language of this text and respond with only the ISO 639-1 language code: %s", sanitizedInput);
+                            GenerateContentResponse response = model.generateContent(prompt);
+                            return ResponseHandler.getText(response).trim().toLowerCase();
+                        }
+                        return detectLanguageWithFallbackProvider(sanitizedInput);
                     } catch (java.io.IOException e) {
                         throw new RuntimeException(e);
                     }
@@ -508,6 +545,26 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         }
     }
 
+    private String detectLanguageWithFallbackProvider(String text) {
+        List<TranslationProvider> providers = fallbackProviders;
+        if (!fallbackEnabled || providers == null) {
+            throw new IllegalStateException("No translation provider available");
+        }
+        for (TranslationProvider provider : providers) {
+            try {
+                if (provider.isAvailable()) {
+                    String detected = provider.detectLanguage(text);
+                    if (detected != null && !detected.trim().isEmpty()) {
+                        return detected.trim().toLowerCase();
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warn("Fallback provider {} language detection failed: {}", provider.getProviderName(), e.getMessage());
+            }
+        }
+        throw new IllegalStateException("No translation provider available");
+    }
+
     @Override
     public TranslationResult translateString(String sourceString, String sourceLanguage,
                                            String targetLanguage, ContentType contentType,
@@ -517,7 +574,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         }
 
         if (!InputSanitizer.isValidInput(sourceString)) {
-            throw new TranslationException("Invalid input for translation", TranslationException.ErrorCode.UNKNOWN);
+            throw new TranslationException("Invalid input for translation", TranslationException.ErrorCode.GENERAL_EXCEPTION);
         }
 
         String sanitizedText = InputSanitizer.sanitizeForPrompt(sourceString);
@@ -525,11 +582,11 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         String sanitizedTargetLang = InputSanitizer.sanitizeLanguageCode(targetLanguage);
         String sanitizedCategory = InputSanitizer.sanitizeContentCategory(contentCategory);
 
-        if (sanitizedSourceLang == null || sanitizedTargetLang == null) {
-            throw new TranslationException("Invalid language codes provided", TranslationException.ErrorCode.UNKNOWN);
+        if (sanitizedTargetLang == null) {
+            throw new TranslationException("Invalid language codes provided", TranslationException.ErrorCode.GENERAL_EXCEPTION);
         }
 
-        if (!InputSanitizer.isValidLanguagePair(sanitizedSourceLang, sanitizedTargetLang)) {
+        if (sanitizedSourceLang != null && !InputSanitizer.isValidLanguagePair(sanitizedSourceLang, sanitizedTargetLang)) {
             throw new TranslationException("Invalid language pair: source and target must be different", 
                     TranslationException.ErrorCode.NOT_SUPPORTED_LANG_DIRECTION);
         }
@@ -567,22 +624,35 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         long startTime = System.currentTimeMillis();
 
         try {
-            String translatedText = resilienceHelper.executeWithRetryAndCircuitBreaker(
-                () -> {
-                    try {
-                        String prompt = createTranslationPrompt(sanitizedText, finalSourceLang, sanitizedTargetLang, contentType);
-                        GenerateContentResponse response = model.generateContent(prompt);
-                        return ResponseHandler.getText(response).trim();
-                    } catch (java.io.IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                },
-                "translateString",
-                "translationCircuitBreaker"
-            );
+            String translatedText;
+            if (model == null) {
+                translatedText = translateWithFallbackProvider(sanitizedText, finalSourceLang,
+                        sanitizedTargetLang, contentType, sanitizedCategory,
+                        new IllegalStateException("Vertex AI model is not configured"));
+            } else {
+                try {
+                    translatedText = resilienceHelper.executeWithRetryAndCircuitBreaker(
+                        () -> {
+                            try {
+                                String prompt = createTranslationPrompt(sanitizedText, finalSourceLang, sanitizedTargetLang, contentType);
+                                GenerateContentResponse response = model.generateContent(prompt);
+                                return ResponseHandler.getText(response).trim();
+                            } catch (java.io.IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        },
+                        "translateString",
+                        "translationCircuitBreaker"
+                    );
+                } catch (RuntimeException primaryFailure) {
+                    translatedText = translateWithFallbackProvider(sanitizedText, finalSourceLang,
+                            sanitizedTargetLang, contentType, sanitizedCategory, primaryFailure);
+                }
+            }
 
-            if (cachingEnabled && cache != null && translatedText != null) {
-                cache.getTranslation(sanitizedText, finalSourceLang, sanitizedTargetLang, key -> translatedText);
+            final String finalTranslation = translatedText;
+            if (cachingEnabled && cache != null && finalTranslation != null) {
+                cache.getTranslation(sanitizedText, finalSourceLang, sanitizedTargetLang, key -> finalTranslation);
             }
 
             if (metrics != null) {
@@ -590,23 +660,21 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
                 metrics.recordLatency(System.currentTimeMillis() - startTime);
             }
 
-            // Trust & Transparency: Analyze the result
-            SentimentResult sentiment = null;
-            ComplianceResult compliance = null;
-            try {
-                sentiment = analyzeSentiment(translatedText);
-                compliance = analyzeCompliance(translatedText);
-                auditService.logEvent("N/A", finalSourceLang, sanitizedTargetLang, sentiment, compliance, "system");
-            } catch (Exception ex) {
-                LOG.warn("Failed to perform transparency analysis for translation", ex);
-            }
-
-            // Principal-Level Governance: Human-In-The-Loop Routing
-            double overallConfidence = sentiment != null ? sentiment.getConfidence() : 1.0;
-            if (overallConfidence < 0.8) {
-                LOG.warn("Low confidence translation detected ({}). Flagging for AEM Inbox review.", overallConfidence);
-                // In a production environment, this would set a JCR flag or trigger an AEM Workflow
-                // for the user to verify the translation.
+            // Trust & Transparency: opt-in analysis, never on the default hot path
+            if (transparencyEnabled) {
+                SentimentResult sentiment = null;
+                ComplianceResult compliance = null;
+                try {
+                    if (config.enableSentimentAnalysis()) {
+                        sentiment = analyzeSentiment(translatedText);
+                    }
+                    if (config.enableComplianceCheck()) {
+                        compliance = analyzeCompliance(translatedText);
+                    }
+                    auditService.logEvent("N/A", finalSourceLang, sanitizedTargetLang, sentiment, compliance, "system");
+                } catch (Exception ex) {
+                    LOG.warn("Failed to perform transparency analysis for translation", ex);
+                }
             }
 
             return createTranslationResult(translatedText, finalSourceLang, sanitizedTargetLang, 
@@ -619,6 +687,30 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
             }
             throw new TranslationException("Translation failed: " + e.getMessage(), TranslationException.ErrorCode.TRANSLATION_FAILED);
         }
+    }
+
+    private String translateWithFallbackProvider(String text, String sourceLang, String targetLang,
+            ContentType contentType, String category, RuntimeException primaryFailure) throws TranslationException {
+        List<TranslationProvider> providers = fallbackProviders;
+        if (!fallbackEnabled || providers == null || providers.isEmpty()) {
+            throw primaryFailure;
+        }
+        for (TranslationProvider provider : providers) {
+            if (!provider.supportsLanguagePair(sourceLang, targetLang)) {
+                continue;
+            }
+            try {
+                LOG.warn("Primary provider failed ({}). Trying fallback provider {}",
+                        primaryFailure.getMessage(), provider.getProviderName());
+                TranslationResult result = provider.translate(text, sourceLang, targetLang, contentType, category);
+                if (result != null && result.getTranslation() != null) {
+                    return result.getTranslation();
+                }
+            } catch (Exception e) {
+                LOG.warn("Fallback provider {} failed: {}", provider.getProviderName(), e.getMessage());
+            }
+        }
+        throw primaryFailure;
     }
 
     private TranslationResult createTranslationResult(String translatedText, String sourceLang, 
@@ -699,8 +791,9 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         if (!feedback.isEmpty()) {
             prompt.append("### Guidelines based on previous human corrections:\n");
             for (com.example.aem.translation.model.TranslationFeedback fb : feedback) {
-                prompt.append(String.format("Source: \"%s\"\nCorrection: \"%s\"\n\n", 
-                    fb.getSourceString(), fb.getHumanCorrection()));
+                prompt.append(String.format("Source: \"%s\"\nCorrection: \"%s\"\n\n",
+                    InputSanitizer.sanitizeInputText(fb.getSourceString()),
+                    InputSanitizer.sanitizeInputText(fb.getHumanCorrection())));
             }
             prompt.append("### Now translate:\n");
         }
@@ -727,10 +820,10 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
             throws TranslationException {
         TranslationJob job = translationJobs.get(strTranslationJobID);
         if (job == null) {
-            throw new TranslationException("Translation job not found: " + strTranslationJobID, TranslationException.ErrorCode.JOB_NOT_FOUND);
+            throw new TranslationException("Translation job not found: " + strTranslationJobID, TranslationException.ErrorCode.GENERAL_EXCEPTION);
         }
 
-        String objectId = translationObject.getPath();
+        String objectId = getObjectId(translationObject);
         if (objectId == null) {
             objectId = UUID.randomUUID().toString();
         }
@@ -746,13 +839,13 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
         jobProperties.put("sourceLanguage", job.getSourceLanguage());
         jobProperties.put("targetLanguage", job.getTargetLanguage());
         jobProperties.put("content", getContentFromTranslationObject(translationObject));
-        jobProperties.put("contentType", translationObject.getContentType().name());
+        jobProperties.put("contentType", contentTypeFor(translationObject).name());
 
         org.apache.sling.event.jobs.Job slingJob = jobManager.addJob(TranslationJobConsumer.JOB_TOPIC, jobProperties);
         
         if (slingJob == null) {
             LOG.error("Failed to create Sling Job for translation object {}", objectId);
-            throw new TranslationException("Failed to queue translation job", TranslationException.ErrorCode.UNKNOWN);
+            throw new TranslationException("Failed to queue translation job", TranslationException.ErrorCode.GENERAL_EXCEPTION);
         }
 
         LOG.info("Successfully queued Sling Job {} for translation object {}", slingJob.getId(), objectId);
@@ -773,7 +866,7 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
             throws TranslationException {
         TranslationJob job = translationJobs.get(strTranslationJobID);
         if (job == null) {
-            throw new TranslationException("Translation job not found: " + strTranslationJobID, TranslationException.ErrorCode.JOB_NOT_FOUND);
+            throw new TranslationException("Translation job not found: " + strTranslationJobID, TranslationException.ErrorCode.GENERAL_EXCEPTION);
         }
         LOG.info("Updated job {} state to: {}", strTranslationJobID, state);
         switch (state.getStatus()) {
@@ -794,43 +887,49 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
             throws TranslationException {
         TranslationJob job = translationJobs.get(strTranslationJobID);
         if (job == null) {
-            throw new TranslationException("Translation job not found: " + strTranslationJobID, TranslationException.ErrorCode.JOB_NOT_FOUND);
+            throw new TranslationException("Translation job not found: " + strTranslationJobID, TranslationException.ErrorCode.GENERAL_EXCEPTION);
         }
 
-        String objectId = translationObject.getPath();
+        String objectId = getObjectId(translationObject);
         String translatedContent = job.getTranslatedContent(objectId);
 
         if (translatedContent == null) {
-             // If content not ready, return original content
-            LOG.warn("Translated content not yet available for object {} in job {}. Returning original content.", objectId, strTranslationJobID);
-            try {
-                // Assuming getContent() returns a String, adjust if it's a byte array or other type
-                Object content = translationObject.getContent();
-                if (content instanceof String) {
-                    return new ByteArrayInputStream(((String) content).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                } else if (content instanceof byte[]) {
-                    return new ByteArrayInputStream((byte[]) content);
-                } else {
-                    throw new TranslationException("Unsupported content type for original content", TranslationException.ErrorCode.UNKNOWN);
-                }
-            } catch (Exception e) {
-                 throw new TranslationException("Could not read original content", e);
-            }
+            // If content not ready, return original content
+            LOG.warn("Translated content not yet available for object {} in job {}. Returning original content.",
+                    objectId, strTranslationJobID);
+            translatedContent = readContentAsString(translationObject);
         }
 
         return new ByteArrayInputStream(translatedContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private String getContentFromTranslationObject(TranslationObject translationObject) throws TranslationException {
-        // In a real implementation, you would use translationObject.getDictionary()
-        // or parse translationObject.getMimeType() to extract translatable strings.
-        // For this example, we'll assume getContent() returns a String.
-        Object content = translationObject.getContent();
-        if (content instanceof String) {
-            return (String) content;
-        } else {
-            // Handle other types or throw an error if expected content is always String
-            throw new TranslationException("Unsupported content type in TranslationObject", TranslationException.ErrorCode.UNKNOWN);
+        return readContentAsString(translationObject);
+    }
+
+    private String getObjectId(TranslationObject translationObject) {
+        String path = translationObject.getTranslationObjectSourcePath();
+        return path != null ? path : translationObject.getId();
+    }
+
+    private ContentType contentTypeFor(TranslationObject translationObject) {
+        String mimeType = translationObject.getMimeType();
+        if (mimeType != null && mimeType.toLowerCase().contains("html")) {
+            return ContentType.HTML;
+        }
+        return ContentType.PLAIN;
+    }
+
+    private String readContentAsString(TranslationObject translationObject) throws TranslationException {
+        try (InputStream in = translationObject.getTranslationObjectInputStream()) {
+            if (in == null) {
+                throw new TranslationException("Translation object has no content stream",
+                        TranslationException.ErrorCode.GENERAL_EXCEPTION);
+            }
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new TranslationException("Could not read translation object content", e,
+                    TranslationException.ErrorCode.GENERAL_EXCEPTION);
         }
     }
 
@@ -900,8 +999,27 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
 
     @Override
     public TranslationScope getFinalScope(String strTranslationJobID) throws TranslationException {
-        // A real implementation would calculate the final scope of the translation job.
-        return null;
+        return new TranslationScope() {
+            @Override
+            public int getWordCount() {
+                return 0;
+            }
+
+            @Override
+            public int getImageCount() {
+                return 0;
+            }
+
+            @Override
+            public int getVideoCount() {
+                return 0;
+            }
+
+            @Override
+            public Map<String, String> getFinalScope() {
+                return Collections.emptyMap();
+            }
+        };
     }
 
     @Override
@@ -920,19 +1038,57 @@ public class TranslateGemmaTranslationServiceImpl implements TranslateGemmaTrans
     @Override
     public CommentCollection<Comment> getTranslationJobCommentCollection(String strTranslationJobID)
             throws TranslationException {
-        // A real implementation would retrieve the comment collection for the job.
-        return null;
+        return new EmptyCommentCollection();
     }
 
     @Override
     public CommentCollection<Comment> getTranslationObjectCommentCollection(String strTranslationJobID,
             TranslationObject translationObject) throws TranslationException {
-        // A real implementation would retrieve the comment collection for the object.
-        return null;
+        return new EmptyCommentCollection();
+    }
+
+    private static final class EmptyCommentCollection implements CommentCollection<Comment> {
+        @Override
+        public Comment addComment(String title, String message, String userId) {
+            throw new UnsupportedOperationException("Comments are not supported by this connector");
+        }
+
+        @Override
+        public List<Comment> getCommentList() {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public Calendar getCreated() {
+            return null;
+        }
+
+        @Override
+        public Calendar getLastModified() {
+            return null;
+        }
+
+        @Override
+        public String getPath() {
+            return null;
+        }
+
+        @Override
+        public Resource getTarget() {
+            return null;
+        }
+
+        @Override
+        public void remove() {
+            // nothing to remove
+        }
     }
 
     @Override
     public String getDefaultCategory() {
+        if (config != null && config.defaultContentCategory() != null) {
+            return config.defaultContentCategory();
+        }
         return "general";
     }
 

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0"
+    jcr:primaryType="sling:OsgiConfig"
+    scripts="[create service user translate-gemma-service,create path (nt:unstructured) /var/translation-gemma/feedback,create path (nt:unstructured) /var/log/translation-gemma/audit,set ACL for translate-gemma-service&#10;    allow jcr:all on /var/translation-gemma&#10;    allow jcr:all on /var/log/translation-gemma&#10;    allow jcr:read on /content&#10;    allow jcr:read on /content/dam&#10;end]"/>

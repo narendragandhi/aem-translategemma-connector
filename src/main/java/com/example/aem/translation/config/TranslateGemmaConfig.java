@@ -2,11 +2,10 @@ package com.example.aem.translation.config;
 
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
-import org.osgi.service.metatype.annotations.Option;
 
 @ObjectClassDefinition(
     name = "TranslateGemma Translation Service Configuration",
-    description = "Configuration for Google TranslateGemma translation service integration"
+    description = "Configuration for the Gemma translation service integration (Vertex AI)"
 )
 public @interface TranslateGemmaConfig {
 
@@ -24,21 +23,15 @@ public @interface TranslateGemmaConfig {
 
     @AttributeDefinition(
         name = "Service Enabled",
-        description = "Enable/disable the TranslateGemma translation service"
+        description = "Enable/disable the Gemma translation service"
     )
     boolean enabled() default true;
 
     @AttributeDefinition(
-        name = "Default Source Language",
-        description = "Default source language code (e.g., en)"
+        name = "Model Name",
+        description = "Vertex AI model ID used for translation"
     )
-    String defaultSourceLanguage() default "en";
-
-    @AttributeDefinition(
-        name = "Default Target Language",
-        description = "Default target language code (e.g., es)"
-    )
-    String defaultTargetLanguage() default "es";
+    String modelName() default "gemma-3-27b-it";
 
     @AttributeDefinition(
         name = "Default Content Category",
@@ -47,132 +40,22 @@ public @interface TranslateGemmaConfig {
     String defaultContentCategory() default "general";
 
     @AttributeDefinition(
-        name = "Max Translation Length",
-        description = "Maximum length of text to translate in one request"
-    )
-    int maxTranslationLength() default 5000;
-
-    @AttributeDefinition(
-        name = "Connection Timeout",
-        description = "Connection timeout in seconds"
-    )
-    int connectionTimeout() default 30;
-
-    @AttributeDefinition(
-        name = "Read Timeout",
-        description = "Read timeout in seconds"
-    )
-    int readTimeout() default 60;
-
-    @AttributeDefinition(
-        name = "Translation Provider",
-        description = "Select the primary translation provider",
-        options = {
-            @Option(label = "Google TranslateGemma", value = "translategemma"),
-            @Option(label = "Google Cloud Translation API", value = "google_translate"),
-            @Option(label = "DeepL", value = "deepl"),
-            @Option(label = "Microsoft Translator", value = "microsoft"),
-            @Option(label = "OpenAI GPT", value = "openai"),
-            @Option(label = "Ollama (Local)", value = "ollama")
-        }
-    )
-    String translationProvider() default "translategemma";
-
-    @AttributeDefinition(
-        name = "Enable Translation Memory",
-        description = "Enable TM lookup before MT translation"
-    )
-    boolean enableTranslationMemory() default true;
-
-    @AttributeDefinition(
-        name = "Translation Memory Min Score",
-        description = "Minimum match score for TM suggestions (0.0-1.0)"
-    )
-    double tmMinScore() default 0.85;
-
-    @AttributeDefinition(
-        name = "Store Translations to TM",
-        description = "Automatically store translations to TM after completion"
-    )
-    boolean storeToTranslationMemory() default true;
-
-    @AttributeDefinition(
         name = "Enable Fallback Providers",
-        description = "Enable fallback to other providers if primary fails"
+        description = "Fall back to other configured TranslationProvider services when the primary call fails"
     )
     boolean enableFallbackProviders() default true;
 
     @AttributeDefinition(
-        name = "Model Name",
-        description = "Translation model name (for TranslateGemma or OpenAI)"
+        name = "Enable Sentiment Analysis",
+        description = "Run an extra LLM sentiment analysis call after every translation (adds cost)"
     )
-    String modelName() default "google/gemma-4-26b-a4b-it";
+    boolean enableSentimentAnalysis() default false;
 
     @AttributeDefinition(
-        name = "External TM Endpoint",
-        description = "Endpoint for external translation memory store (e.g., Redis or Vector Search API)"
+        name = "Enable Compliance Check",
+        description = "Run an extra LLM brand-compliance check after every translation (adds cost)"
     )
-    String externalTmEndpoint() default "";
-
-    @AttributeDefinition(
-        name = "Use External TM",
-        description = "Whether to use external storage for translation memory instead of JCR"
-    )
-    boolean useExternalTm() default false;
-
-    @AttributeDefinition(
-        name = "API Key",
-        description = "API key for external providers (DeepL, Microsoft, OpenAI)"
-    )
-    String apiKey() default "";
-
-    @AttributeDefinition(
-        name = "Ollama Endpoint",
-        description = "Ollama server endpoint (e.g., http://localhost:11434)"
-    )
-    String ollamaEndpoint() default "http://localhost:11434";
-
-    @AttributeDefinition(
-        name = "Ollama Model",
-        description = "Ollama model to use (e.g., llama2, mistral)"
-    )
-    String ollamaModel() default "llama2";
-
-    @AttributeDefinition(
-        name = "Parallel Translations",
-        description = "Number of parallel translation requests"
-    )
-    int parallelTranslations() default 3;
-
-    @AttributeDefinition(
-        name = "Retry Attempts",
-        description = "Number of retry attempts on failure"
-    )
-    int retryAttempts() default 2;
-
-    @AttributeDefinition(
-        name = "Supported Content Types",
-        description = "Comma-separated content types (html,plaintext,json,xml)"
-    )
-    String supportedContentTypes() default "html,plaintext,json,xml";
-
-    @AttributeDefinition(
-        name = "Enable Visual Context",
-        description = "Capture visual context for translators"
-    )
-    boolean enableVisualContext() default false;
-
-    @AttributeDefinition(
-        name = "Enable DAM Asset Translation",
-        description = "Translate DAM asset metadata"
-    )
-    boolean enableDamTranslation() default true;
-
-    @AttributeDefinition(
-        name = "Enable i18n Dictionary Translation",
-        description = "Translate i18n dictionaries"
-    )
-    boolean enableI18nTranslation() default true;
+    boolean enableComplianceCheck() default false;
 
     @AttributeDefinition(
         name = "Retry Max Attempts",
@@ -233,22 +116,4 @@ public @interface TranslateGemmaConfig {
         description = "Enable metrics collection"
     )
     boolean enableMetrics() default true;
-
-    @AttributeDefinition(
-        name = "Request Timeout (seconds)",
-        description = "Overall request timeout for translation calls"
-    )
-    int requestTimeoutSeconds() default 120;
-
-    @AttributeDefinition(
-        name = "Batch Size",
-        description = "Number of texts to translate in a single batch request"
-    )
-    int batchSize() default 10;
-
-    @AttributeDefinition(
-        name = "Metrics Enabled",
-        description = "Enable detailed metrics reporting"
-    )
-    boolean metricsEnabled() default false;
 }

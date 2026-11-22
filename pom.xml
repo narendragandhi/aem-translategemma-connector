@@ -7,48 +7,24 @@
 
     <groupId>com.example.aem</groupId>
     <artifactId>aem-translategemma-connector</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-    <packaging>content-package</packaging>
+    <version>2.0.0-SNAPSHOT</version>
+    <packaging>bundle</packaging>
 
     <name>AEM TranslateGemma Translation Connector</name>
-    <description>Custom AEM translation connector using Google's TranslateGemma model</description>
+    <description>Custom AEM translation connector using Google's Gemma model via Vertex AI</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
         <aem.sdk.api.version>2025.11.23482.20251120T200914Z-251200</aem.sdk.api.version>
-        <osgi.annotation.version>1.4.0</osgi.annotation.version>
         <junit.version>5.9.2</junit.version>
         <google.cloud.vertexai.version>1.50.0</google.cloud.vertexai.version>
         <jackrabbit.version>1.3.6</jackrabbit.version>
         <commons.lang3.version>3.12.0</commons.lang3.version>
-        <httpclient.version>4.5.14</httpclient.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <caffeine.version>3.1.8</caffeine.version>
         <micrometer.version>1.12.2</micrometer.version>
     </properties>
-
-    <profiles>
-        <!-- Cloud Service Build Profile -->
-        <profile>
-            <id>cloud-service</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <properties>
-                <build.environment>cloud</build.environment>
-            </properties>
-        </profile>
-
-        <!-- On-Premise/Local Development Profile -->
-        <profile>
-            <id>on-premise</id>
-            <properties>
-                <build.environment>on-premise</build.environment>
-            </properties>
-        </profile>
-    </profiles>
 
     <repositories>
         <repository>
@@ -89,7 +65,14 @@
     </pluginRepositories>
 
     <dependencies>
-        <!-- AEM Core Dependencies -->
+        <!-- Declared first so its classes win over the ancient Guava inside the AEM SDK uber-jar -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.1.0-jre</version>
+        </dependency>
+
+        <!-- AEM SDK API (includes com.adobe.granite.translation.api and granite comments) -->
         <dependency>
             <groupId>com.adobe.aem</groupId>
             <artifactId>aem-sdk-api</artifactId>
@@ -97,18 +80,11 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- OSGi Annotations -->
+        <!-- OSGi -->
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.annotation.versioning</artifactId>
             <version>1.1.2</version>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.osgi</groupId>
-            <artifactId>org.osgi.service.component</artifactId>
-            <version>1.4.0</version>
             <scope>provided</scope>
         </dependency>
 
@@ -126,21 +102,28 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Google Cloud Vertex AI Dependencies -->
+        <!-- Google Cloud Vertex AI (embedded: not provided by AEM) -->
         <dependency>
             <groupId>com.google.cloud</groupId>
             <artifactId>google-cloud-vertexai</artifactId>
             <version>${google.cloud.vertexai.version}</version>
         </dependency>
 
-        <!-- Jackson for JSON processing -->
+        <!-- Vertex AI needs a modern Guava; the AEM SDK otherwise supplies an ancient one -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.1.0-jre</version>
+        </dependency>
+
+        <!-- Provided by the AEM/Granite runtime -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.15.2</version>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- SLF4J Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
@@ -148,26 +131,21 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Apache Commons Lang -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
-            <version>3.12.0</version>
+            <version>${commons.lang3.version}</version>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- Apache HTTP Client -->
+        <!-- Embedded: SimpleMeterRegistry is used at runtime and AEM does not export micrometer -->
         <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-            <version>4.5.14</version>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+            <version>${micrometer.version}</version>
         </dependency>
 
-        <!-- Resilience4j for retry and circuit breaker -->
-        <dependency>
-            <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-spring-boot3</artifactId>
-            <version>${resilience4j.version}</version>
-        </dependency>
+        <!-- Embedded: resilience + caching -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-retry</artifactId>
@@ -178,27 +156,13 @@
             <artifactId>resilience4j-circuitbreaker</artifactId>
             <version>${resilience4j.version}</version>
         </dependency>
-
-        <!-- Caffeine for caching -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
             <version>${caffeine.version}</version>
         </dependency>
 
-        <!-- Micrometer for metrics -->
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-core</artifactId>
-            <version>${micrometer.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-statsd</artifactId>
-            <version>${micrometer.version}</version>
-        </dependency>
-
-        <!-- Test Dependencies -->
+        <!-- Tests -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
@@ -212,8 +176,6 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
-
-
 
         <dependency>
             <groupId>org.mockito</groupId>
@@ -235,10 +197,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.13.0</version>
                 <configuration>
-                    <source>11</source>
-                    <target>11</target>
+                    <release>21</release>
                 </configuration>
             </plugin>
 
@@ -253,6 +214,7 @@
                 </configuration>
             </plugin>
 
+            <!-- OSGi bundle: this is the artifact that gets installed into AEM -->
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
@@ -262,82 +224,61 @@
                     <instructions>
                         <Bundle-SymbolicName>com.example.aem.translation.translategemma</Bundle-SymbolicName>
                         <Bundle-Name>AEM TranslateGemma Translation Connector</Bundle-Name>
-                        <Bundle-Description>Translation connector using Google's TranslateGemma model</Bundle-Description>
+                        <Bundle-Description>Translation connector using Google's Gemma model via Vertex AI</Bundle-Description>
                         <Bundle-Vendor>Example AEM Solutions</Bundle-Vendor>
                         <Bundle-Version>${project.version}</Bundle-Version>
                         <Export-Package>
-                            com.example.aem.translation.*;version=${project.version},
-                            com.example.aem.translation.provider;version=${project.version},
-                            com.example.aem.translation.service;version=${project.version},
-                            com.example.aem.translation.model;version=${project.version},
-                            com.adobe.granite.translation.api;version=1.0.0
+                            com.example.aem.translation.service;version="${project.version}",
+                            com.example.aem.translation.provider;version="${project.version}",
+                            com.example.aem.translation.model;version="${project.version}",
+                            com.example.aem.translation.exception;version="${project.version}"
                         </Export-Package>
                         <Import-Package>
-                            com.adobe.granite.translation.api;version="[1.0,2)",
-                            com.adobe.granite.comments.*;version="[1.0,2)",
-                            com.day.cq.wcm.api.*;version="[1.0,2)",
-                            com.day.cq.dam.api.*;version="[1.0,2)",
-                            com.day.cq.tagging.*;version="[1.0,2)",
-                            com.day.cq.xfw.*;version="[1.0,2)",
-                            org.apache.sling.api.resource.*;version="[1.0,2)",
-                            org.apache.sling.api.servlets.*;version="[2.1,3)",
-                            org.apache.sling.api.*;version="[1.0,2)",
-                            org.apache.sling.jcr.resource.*;version="[1.0,2)",
-                            org.apache.sling.resourcebuilder.*;version="[1.0,2)",
-                            org.osgi.service.component.*;version="[1.4,2)",
-                            org.osgi.service.component.annotations.*;version="[1.4,2)",
-                            org.osgi.service.metatype.annotations.*;version="[1.4,2)",
-                            org.osgi.framework.*;version="[1.8,2)",
-                            org.osgi.annotation.versioning.*;version="[1.1,2)",
-                            com.google.cloud.vertexai.*;version="[1.0,2)",
-                            com.fasterxml.jackson.databind.*;version="[2.15,3)",
-                            com.fasterxml.jackson.annotation.*;version="[2.15,3)",
-                            org.apache.commons.lang3.*;version="[3.12,4)",
-                            org.apache.http.*;version="[4.5,6)",
-                            io.github.resilience4j.*;version="[2.2,3)",
-                            com.github.benmanes.caffeine.*;version="[3.1,4)",
-                            io.micrometer.*;version="[1.12,2)",
-                            javax.jcr.*;version="[2.0,3)",
-                            org.slf4j.*;version="[1.7,2)",
-                            *
+                            com.adobe.granite.translation.api;version="[1.0,3)",
+                            com.adobe.granite.comments;version="[1.0,3)",
+                            javax.servlet;version="[3.0,5)",
+                            org.apache.sling.*;version="[1.0,5)",
+                            org.osgi.*;version="[1.0,3)",
+                            org.slf4j.*;version="[1.7,3)",
+                            *;resolution:=optional
                         </Import-Package>
-                        <Sling-Model-Packages>com.example.aem.translation</Sling-Model-Packages>
-                        <Private-Package>
-                            com.example.aem.translation.impl.*,
-                            com.example.aem.translation.servlet.*,
-                            com.example.aem.translation.sites.service.*,
-                            com.example.aem.translation.sites.service.result.*,
-                            com.example.aem.translation.tm.impl.*,
-                            com.example.aem.translation.xf.impl.*,
-                            com.example.aem.translation.dam.impl.*,
-                            com.example.aem.translation.i18n.impl.*,
-                            com.example.aem.translation.visualcontext.impl.*,
-                            com.example.aem.translation.provider.impl.*,
-                            com.example.aem.translation.cfintegration.service.impl.*,
-                            com.example.aem.translation.job.impl.*,
-                            com.example.aem.translation.terminology.impl.*
-                        </Private-Package>
-                        <Embed-Dependency>
-                            google-cloud-vertexai;inline=true,
-                            jackson-databind;inline=true
-                        </Embed-Dependency>
+                        <Embed-Dependency>*;scope=compile;inline=true</Embed-Dependency>
+                        <Embed-Transitive>true</Embed-Transitive>
                         <_dsannotations>*</_dsannotations>
                         <_metatypeannotations>*</_metatypeannotations>
                     </instructions>
                 </configuration>
             </plugin>
 
-            <!-- AEM Content Package Plugin for Cloud Service -->
+            <!-- Content package: OSGi configs and clientlibs (zip next to the bundle jar) -->
             <plugin>
                 <groupId>org.apache.jackrabbit</groupId>
                 <artifactId>filevault-package-maven-plugin</artifactId>
                 <version>${jackrabbit.version}</version>
-                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <id>generate-package-metadata</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>generate-metadata</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>build-content-package</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>package</goal>
+                        </goals>
+                    </execution>
+                </executions>
                 <configuration>
                     <group>Example AEM</group>
-                    <name>AEM TranslateGemma Connector</name>
-                    <description>Translation connector using Google TranslateGemma model</description>
+                    <name>aem-translategemma-connector-content</name>
+                    <description>Configs and UI overlays for the TranslateGemma connector</description>
                     <packageType>mixed</packageType>
+                    <sourceDirectory>${project.basedir}/src/main/content</sourceDirectory>
+                    <jcrRootSourceDirectory>${project.basedir}/src/main/content/jcr_root</jcrRootSourceDirectory>
+                    <filterSource>${project.basedir}/src/main/content/META-INF/vault/filter.xml</filterSource>
                     <properties>
                         <cloudManagerTarget>none</cloudManagerTarget>
                     </properties>
